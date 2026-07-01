@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>使用者 | AI Health Platform</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+    <link rel="manifest" href="manifest.json" />
+    <meta name="theme-color" content="#0f766e" />
+    <script>
+        if (localStorage.getItem("ai_health_platform_theme") === "dark") document.documentElement.dataset.theme = "dark";
+    </script>
+    <script>
+        (function () {
+            try {
+                const s = JSON.parse(localStorage.getItem("ai_health_platform_login_state_v2") || "{}");
+                if (s.loginAt && Date.now() - s.loginAt > 12 * 60 * 60 * 1000) { window.location.href = "index.html"; }
+                if (!s.currentAccount && !s.demoMode) { window.location.href = "index.html"; }
+                if (s.role !== "user") { window.location.href = "index.html"; }
+            } catch (e) { window.location.href = "index.html"; }
+        })();
+    </script>
+</head>
+<body class="page-body">
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="nav-brand" onclick="showSection('user-dashboard-section')" style="cursor:pointer">
+            <span class="nav-brand-icon">AI</span>
+            <div>
+                <div class="nav-brand-name">AI Health</div>
+                <div class="nav-brand-sub">一般使用者</div>
+            </div>
+        </div>
+        <button class="nav-toggle" id="nav-toggle" onclick="toggleNavMenu()" aria-label="選單">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+                <rect y="3" width="20" height="2" rx="1"/>
+                <rect y="9" width="20" height="2" rx="1"/>
+                <rect y="15" width="20" height="2" rx="1"/>
+            </svg>
+        </button>
+        <div class="nav-menu" id="nav-menu">
+            <button class="nav-btn" data-section="user-dashboard-section" onclick="showSection('user-dashboard-section')">首頁</button>
+            <div class="nav-dropdown-wrap">
+                <button class="nav-btn" onclick="toggleDropdown(this)">健康資料 <span class="nav-caret">▾</span></button>
+                <div class="nav-dropdown">
+                    <button class="nav-dropdown-item" data-section="health-input-section" onclick="showSection('health-input-section')">新增資料</button>
+                    <button class="nav-dropdown-item" data-section="health-trend-section" onclick="showSection('health-trend-section')">健康趨勢</button>
+                </div>
+            </div>
+            <div class="nav-dropdown-wrap">
+                <button class="nav-btn" onclick="toggleDropdown(this)">AI 分析 <span class="nav-caret">▾</span></button>
+                <div class="nav-dropdown">
+                    <button class="nav-dropdown-item" data-section="ai-health-section" onclick="showSection('ai-health-section')">AI 健康建議</button>
+                    <button class="nav-dropdown-item" data-section="fhir-viewer-section" onclick="showSection('fhir-viewer-section')">FHIR JSON</button>
+                </div>
+            </div>
+            <button class="nav-btn" data-section="share-section" onclick="showSection('share-section')">授權分享</button>
+            <button class="nav-btn" data-section="notification-section" onclick="showSection('notification-section')">
+                通知
+                <span class="nav-notif-badge hidden" id="nav-notif-count"></span>
+            </button>
+        </div>
+        <div class="nav-right">
+            <button class="nav-notif-btn dark-mode-toggle" onclick="toggleDarkMode()" title="切換深色模式" aria-label="切換深色模式" aria-pressed="false">🌙</button>
+            <button class="nav-notif-btn" onclick="showSection('notification-section')" title="通知" aria-label="通知">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                </svg>
+                <span class="nav-notif-badge hidden" id="nav-notif-count-icon"></span>
+            </button>
+            <div class="nav-user-wrap" id="nav-user-wrap">
+                <button class="nav-user-btn" onclick="toggleUserMenu()">
+                    <span class="nav-user-avatar" id="nav-avatar">U</span>
+                    <span id="nav-user-name">使用者</span>
+                    <span class="nav-caret">▾</span>
+                </button>
+                <div class="nav-user-menu">
+                    <div class="nav-user-info">
+                        <strong id="nav-full-name">王小明</strong>
+                        <small id="nav-role-label">一般使用者</small>
+                    </div>
+                    <hr />
+                    <button class="logout-btn" onclick="logoutAccount()">登出</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="page-content">
+        <!-- Dashboard -->
+        <section id="user-dashboard-section" class="content-section active">
+            <h2 class="section-title">使用者首頁</h2>
+            <div id="user-dashboard-cards" class="kpi-grid"></div>
+            <div class="chart-row" style="margin-top:24px">
+                <div class="chart-box">
+                    <div class="chart-box-title">血壓趨勢（近 7 筆）</div>
+                    <canvas id="chart-user-bp" height="180" role="img" aria-label="血壓趨勢圖，近 7 筆資料"></canvas>
+                </div>
+                <div class="chart-box">
+                    <div class="chart-box-title">每日步數（近 7 筆）</div>
+                    <canvas id="chart-user-steps" height="180" role="img" aria-label="每日步數圖，近 7 筆資料"></canvas>
+                </div>
+            </div>
+            <div class="dashboard-panels">
+                <div class="card">
+                    <h3>AI 健康摘要</h3>
+                    <div id="user-ai-summary"></div>
+                    <button class="secondary-button" onclick="showSection('ai-health-section')">查看完整建議</button>
+                </div>
+                <div class="card">
+                    <h3>最新通知</h3>
+                    <div id="user-notification-summary"></div>
+                    <button class="secondary-button" onclick="showSection('notification-section')">查看所有通知</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Health Input -->
+        <section id="health-input-section" class="content-section">
+            <h2 class="section-title">新增健康資料</h2>
+            <div class="card form-card">
+                <form onsubmit="submitHealthData(event)">
+                    <div class="form-group">
+                        <label for="health-date">日期</label>
+                        <input id="health-date" type="date" required />
+                    </div>
+                    <div class="form-row-3">
+                        <div class="form-group">
+                            <label for="health-systolic">收縮壓 (mmHg)</label>
+                            <input id="health-systolic" type="number" min="60" max="220" placeholder="120" required />
+                        </div>
+                        <div class="form-group">
+                            <label for="health-diastolic">舒張壓 (mmHg)</label>
+                            <input id="health-diastolic" type="number" min="40" max="130" placeholder="80" required />
+                        </div>
+                        <div class="form-group">
+                            <label for="health-heart-rate">心率 (bpm)</label>
+                            <input id="health-heart-rate" type="number" min="40" max="220" placeholder="72" required />
+                        </div>
+                    </div>
+                    <div class="form-row-3">
+                        <div class="form-group">
+                            <label for="health-weight">體重 (kg)</label>
+                            <input id="health-weight" type="number" min="30" max="250" step="0.1" placeholder="70.0" required />
+                        </div>
+                        <div class="form-group">
+                            <label for="health-height">身高 (cm)</label>
+                            <input id="health-height" type="number" min="100" max="250" placeholder="170" required />
+                        </div>
+                        <div class="form-group">
+                            <label for="health-steps">步數</label>
+                            <input id="health-steps" type="number" min="0" max="100000" placeholder="8000" required />
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="health-exercise">運動時間 (分鐘)</label>
+                        <input id="health-exercise" type="number" min="0" max="600" placeholder="30" required />
+                    </div>
+                    <button type="submit" class="primary-button">儲存健康資料</button>
+                </form>
+            </div>
+        </section>
+
+        <!-- Health Trend -->
+        <section id="health-trend-section" class="content-section">
+            <h2 class="section-title">健康趨勢</h2>
+            <div class="range-buttons">
+                <button class="range-button active" data-range="7" onclick="setTrendRange(7)">7 天</button>
+                <button class="range-button" data-range="14" onclick="setTrendRange(14)">14 天</button>
+                <button class="range-button" data-range="30" onclick="setTrendRange(30)">30 天</button>
+                <button class="range-button" data-range="all" onclick="setTrendRange('all')">全部</button>
+            </div>
+            <div id="trend-summary-cards" class="kpi-grid"></div>
+            <p id="trend-data-hint" class="muted" style="margin:8px 0 0;"></p>
+            <div class="trend-charts">
+                <div class="chart-card"><h4>血壓趨勢</h4><canvas id="bp-chart" height="220" role="img" aria-label="血壓趨勢圖"></canvas></div>
+                <div class="chart-card"><h4>體重與 BMI</h4><canvas id="weight-chart" height="220" role="img" aria-label="體重與 BMI 趨勢圖"></canvas></div>
+                <div class="chart-card"><h4>心率趨勢</h4><canvas id="heart-chart" height="220" role="img" aria-label="心率趨勢圖"></canvas></div>
+                <div class="chart-card"><h4>每日步數</h4><canvas id="steps-chart" height="220" role="img" aria-label="每日步數圖"></canvas></div>
+                <div class="chart-card"><h4>運動時間與熱量</h4><canvas id="exercise-chart" height="220" role="img" aria-label="運動時間與熱量趨勢圖"></canvas></div>
+            </div>
+            <div id="trend-ai-summary" class="card" style="margin-top:20px"></div>
+        </section>
+
+        <!-- AI Health -->
+        <section id="ai-health-section" class="content-section">
+            <h2 class="section-title">AI 健康建議</h2>
+            <div id="ai-health-panel">
+                <div class="ai-analysis-layout">
+                    <div class="ai-score-card">
+                        <span>AI 健康分數</span>
+                        <strong id="ai-score-value">--</strong>
+                        <small id="ai-risk-level">目前尚無資料</small>
+                    </div>
+                    <div class="ai-trend-summary">
+                        <h3>AI 趨勢摘要</h3>
+                        <p id="ai-summary">目前尚無健康資料，請先新增健康紀錄以產生 AI 分析。</p>
+                        <div id="ai-trend-summary" class="ai-trend-grid"></div>
+                    </div>
+                </div>
+                <div id="ai-risk-tags" class="ai-risk-chip-list"></div>
+                <div class="ai-advice-grid">
+                    <article class="ai-advice-card"><h3>飲食建議</h3><p id="ai-diet-advice">--</p></article>
+                    <article class="ai-advice-card"><h3>運動建議</h3><p id="ai-exercise-advice">--</p></article>
+                    <article class="ai-advice-card"><h3>睡眠建議</h3><p id="ai-sleep-advice">--</p></article>
+                    <article class="ai-advice-card"><h3>就醫提醒</h3><p id="ai-medical-advice">--</p></article>
+                    <article class="ai-advice-card"><h3>生活習慣建議</h3><p id="ai-lifestyle-advice">--</p></article>
+                </div>
+            </div>
+        </section>
+
+        <!-- FHIR Viewer -->
+        <section id="fhir-viewer-section" class="content-section">
+            <h2 class="section-title">FHIR JSON 預覽</h2>
+            <div class="card">
+                <div style="display:flex;gap:8px;margin-bottom:12px">
+                    <button class="secondary-button" onclick="copyFHIR()">複製 JSON</button>
+                    <button class="secondary-button" onclick="downloadFHIR()">下載 .json</button>
+                </div>
+                <pre id="fhir-json-output" class="code-block"></pre>
+            </div>
+        </section>
+
+        <!-- Share -->
+        <section id="share-section" class="content-section">
+            <h2 class="section-title">授權分享</h2>
+            <div class="share-layout">
+                <div class="card form-card">
+                    <h3>建立授權</h3>
+                    <form onsubmit="generateQRCode(event)">
+                        <div class="form-group">
+                            <label for="share-target-role">授權對象</label>
+                            <select id="share-target-role" required>
+                                <option value="">選擇對象</option>
+                                <option value="coach">健身教練</option>
+                                <option value="nutritionist">營養師</option>
+                                <option value="admin">系統管理員</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>授權資料範圍</label>
+                            <div class="checkbox-group">
+                                <label><input type="checkbox" name="share-data-scope" value="血壓" /> 血壓</label>
+                                <label><input type="checkbox" name="share-data-scope" value="體重" /> 體重</label>
+                                <label><input type="checkbox" name="share-data-scope" value="BMI" /> BMI</label>
+                                <label><input type="checkbox" name="share-data-scope" value="心率" /> 心率</label>
+                                <label><input type="checkbox" name="share-data-scope" value="步數" /> 步數</label>
+                                <label><input type="checkbox" name="share-data-scope" value="運動紀錄" /> 運動紀錄</label>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="share-duration">授權期限</label>
+                            <select id="share-duration">
+                                <option value="24小時">24 小時</option>
+                                <option value="7天" selected>7 天</option>
+                                <option value="30天">30 天</option>
+                                <option value="永久授權">永久授權</option>
+                            </select>
+                        </div>
+                        <button type="submit" class="primary-button">產生授權 QR Code</button>
+                    </form>
+                </div>
+                <div class="card qr-card">
+                    <h3>授權 QR Code</h3>
+                    <canvas id="qr-canvas" width="180" height="180" role="img" aria-label="授權 QR Code，可供教練或營養師掃描以取得授權"></canvas>
+                    <div class="qr-info">
+                        <div><span>授權對象</span><strong id="qr-target">-</strong></div>
+                        <div><span>資料範圍</span><strong id="qr-scope">-</strong></div>
+                        <div><span>有效期限</span><strong id="qr-expire">-</strong></div>
+                        <div><span>驗證 Token</span><code id="qr-token">-</code></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Registration -->
+        <section id="registration-section" class="content-section">
+            <div class="registration-hero">
+                <div>
+                    <h2>競賽報名系統</h2>
+                    <p>請填寫隊伍資料、作品資訊與 FHIR 實作內容。</p>
+                </div>
+                <button type="button" class="secondary-button" onclick="showSection('my-registration-section')">查看我的報名</button>
+            </div>
+            <div class="card form-card registration-form-card">
+                <form onsubmit="submitRegistration(event)">
+                    <div class="registration-form-section">
+                        <h3 class="registration-section-title"><span>01</span>隊伍資料</h3>
+                        <div class="form-row-2">
+                            <div class="form-group">
+                                <label for="reg-team-name">團隊名稱</label>
+                                <input id="reg-team-name" type="text" placeholder="輸入團隊名稱" required />
+                            </div>
+                            <div class="form-group">
+                                <label for="reg-category">主題領域</label>
+                                <div class="custom-select" data-target="reg-category">
+                                    <button type="button" class="custom-select-trigger">
+                                        <span>運動健康</span>
+                                        <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                                    </button>
+                                    <div class="custom-select-menu">
+                                        <button type="button" data-value="醫療資訊">醫療資訊</button>
+                                        <button type="button" data-value="運動健康">運動健康</button>
+                                        <button type="button" data-value="長期照護">長期照護</button>
+                                        <button type="button" data-value="教育科技">教育科技</button>
+                                        <button type="button" data-value="問卷／資料收集應用">問卷／資料收集應用</button>
+                                    </div>
+                                    <input type="hidden" id="reg-category" value="運動健康" />
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="registration-form-section">
+                        <h3 class="registration-section-title"><span>02</span>隊長資料</h3>
+                        <div class="form-row-3">
+                            <div class="form-group">
+                                <label for="reg-leader-name">隊長姓名</label>
+                                <input id="reg-leader-name" type="text" placeholder="隊長姓名" required />
+                            </div>
+                            <div class="form-group">
+                                <label for="reg-email">聯絡 Email</label>
+                                <input id="reg-email" type="email" placeholder="email@example.com" required />
+                            </div>
+                            <div class="form-group">
+                                <label for="reg-phone">手機</label>
+                                <input id="reg-phone" type="tel" placeholder="09XXXXXXXX" required />
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="reg-organization">學校／單位</label>
+                            <input id="reg-organization" type="text" placeholder="學校或機構" required />
+                        </div>
+                    </div>
+
+                    <div class="registration-form-section">
+                        <h3 class="registration-section-title"><span>03</span>隊員資料</h3>
+                        <div class="form-row-3">
+                            <div class="form-group">
+                                <label for="reg-member-1">成員 1</label>
+                                <input id="reg-member-1" type="text" placeholder="姓名" />
+                            </div>
+                            <div class="form-group">
+                                <label for="reg-member-2">成員 2</label>
+                                <input id="reg-member-2" type="text" placeholder="姓名" />
+                            </div>
+                            <div class="form-group">
+                                <label for="reg-member-3">成員 3</label>
+                                <input id="reg-member-3" type="text" placeholder="姓名" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="registration-form-section">
+                        <h3 class="registration-section-title"><span>04</span>作品資料</h3>
+                        <div class="form-group">
+                            <label for="reg-project-name">作品名稱</label>
+                            <input id="reg-project-name" type="text" placeholder="輸入作品名稱" required />
+                        </div>
+                        <div class="form-group">
+                            <label for="reg-description">作品描述</label>
+                            <textarea id="reg-description" rows="3" placeholder="簡述作品內容與特色" required></textarea>
+                        </div>
+                        <div class="form-row-2">
+                            <div class="form-group">
+                                <label for="reg-roles">使用者角色</label>
+                                <input id="reg-roles" type="text" placeholder="user, coach, nutritionist, admin" required />
+                            </div>
+                            <div class="form-group">
+                                <label for="reg-fhir-resources">FHIR Resources</label>
+                                <input id="reg-fhir-resources" type="text" placeholder="Patient, Observation..." required />
+                            </div>
+                        </div>
+                        <div class="form-row-2">
+                            <div class="form-group">
+                                <label for="reg-github-url">GitHub URL</label>
+                                <input id="reg-github-url" type="url" placeholder="https://github.com/..." />
+                            </div>
+                            <div class="form-group">
+                                <label for="reg-demo-url">Demo URL</label>
+                                <input id="reg-demo-url" type="url" placeholder="https://..." />
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="reg-note">備註</label>
+                            <textarea id="reg-note" rows="2" placeholder="其他補充說明"></textarea>
+                        </div>
+                    </div>
+
+                    <div class="registration-submit-bar">
+                        <button type="submit" class="primary-button registration-submit-button">送出報名</button>
+                    </div>
+                </form>
+            </div>
+        </section>
+
+        <!-- My Registration -->
+        <section id="my-registration-section" class="content-section">
+            <div id="my-registration-body"></div>
+        </section>
+
+        <!-- Notifications -->
+        <section id="notification-section" class="content-section">
+            <h2 class="section-title">通知中心</h2>
+            <div class="card">
+                <div id="notification-list" class="timeline"></div>
+            </div>
+        </section>
+    </div>
+
+    <div id="chart-tooltip" class="chart-tooltip"></div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+    <script src="shared.js"></script>
+    <script>
+        (async function () {
+            await initDefaultAccounts();
+            saveState();
+            const today = new Date();
+            const dateInput = document.getElementById("health-date");
+            if (dateInput) dateInput.value = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,"0")}-${String(today.getDate()).padStart(2,"0")}`;
+            showSection("user-dashboard-section");
+        })();
+    </script>
+</body>
+</html>

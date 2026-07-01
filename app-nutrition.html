@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>營養師端 | AI Health Platform</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+    <link rel="manifest" href="manifest.json" />
+    <meta name="theme-color" content="#0f766e" />
+    <script>
+        if (localStorage.getItem("ai_health_platform_theme") === "dark") document.documentElement.dataset.theme = "dark";
+    </script>
+    <script>
+        (function () {
+            try {
+                const s = JSON.parse(localStorage.getItem("ai_health_platform_login_state_v2") || "{}");
+                if (s.loginAt && Date.now() - s.loginAt > 12 * 60 * 60 * 1000) { window.location.href = "index.html"; }
+                if (!s.currentAccount && !s.demoMode) { window.location.href = "index.html"; }
+                if (s.role !== "nutritionist") { window.location.href = "index.html"; }
+            } catch (e) { window.location.href = "index.html"; }
+        })();
+    </script>
+</head>
+<body class="page-body">
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="nav-brand" onclick="showSection('nutrition-dashboard-section')" style="cursor:pointer">
+            <span class="nav-brand-icon">AI</span>
+            <div>
+                <div class="nav-brand-name">AI Health</div>
+                <div class="nav-brand-sub">營養師</div>
+            </div>
+        </div>
+        <button class="nav-toggle" id="nav-toggle" onclick="toggleNavMenu()" aria-label="選單">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+                <rect y="3" width="20" height="2" rx="1"/>
+                <rect y="9" width="20" height="2" rx="1"/>
+                <rect y="15" width="20" height="2" rx="1"/>
+            </svg>
+        </button>
+        <div class="nav-menu" id="nav-menu">
+            <button class="nav-btn" data-section="nutrition-dashboard-section" onclick="showSection('nutrition-dashboard-section')">首頁</button>
+            <div class="nav-dropdown-wrap">
+                <button class="nav-btn" onclick="toggleDropdown(this)">個案管理 <span class="nav-caret">▾</span></button>
+                <div class="nav-dropdown">
+                    <button class="nav-dropdown-item" data-section="case-list-section" onclick="showSection('case-list-section')">個案列表</button>
+                    <button class="nav-dropdown-item" data-section="bmi-analysis-section" onclick="showSection('bmi-analysis-section')">BMI 分析</button>
+                    <button class="nav-dropdown-item" data-section="weight-trend-section" onclick="showSection('weight-trend-section')">體重趨勢</button>
+                    <button class="nav-dropdown-item" data-section="blood-pressure-section" onclick="showSection('blood-pressure-section')">血壓提醒</button>
+                </div>
+            </div>
+            <button class="nav-btn" data-section="diet-advice-section" onclick="showSection('diet-advice-section')">AI 飲食建議</button>
+            <button class="nav-btn" data-section="nutrition-record-section" onclick="showSection('nutrition-record-section')">營養紀錄</button>
+            <button class="nav-btn" data-section="notification-section" onclick="showSection('notification-section')">
+                通知
+                <span class="nav-notif-badge hidden" id="nav-notif-count"></span>
+            </button>
+        </div>
+        <div class="nav-right">
+            <button class="nav-notif-btn dark-mode-toggle" onclick="toggleDarkMode()" title="切換深色模式" aria-label="切換深色模式" aria-pressed="false">🌙</button>
+            <button class="nav-notif-btn" onclick="showSection('notification-section')" title="通知" aria-label="通知">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                </svg>
+                <span class="nav-notif-badge hidden" id="nav-notif-count-icon"></span>
+            </button>
+            <div class="nav-user-wrap" id="nav-user-wrap">
+                <button class="nav-user-btn" onclick="toggleUserMenu()">
+                    <span class="nav-user-avatar" id="nav-avatar">N</span>
+                    <span id="nav-user-name">營養師</span>
+                    <span class="nav-caret">▾</span>
+                </button>
+                <div class="nav-user-menu">
+                    <div class="nav-user-info">
+                        <strong id="nav-full-name">陳營養師</strong>
+                        <small id="nav-role-label">營養師</small>
+                    </div>
+                    <hr />
+                    <button class="logout-btn" onclick="logoutAccount()">登出</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="page-content">
+        <!-- Dashboard -->
+        <section id="nutrition-dashboard-section" class="content-section active">
+            <h2 class="section-title">營養師首頁</h2>
+            <div id="nutrition-dashboard-cards" class="kpi-grid"></div>
+            <div class="chart-row" style="margin-top:24px">
+                <div class="chart-box">
+                    <div class="chart-box-title">個案 BMI 分佈</div>
+                    <canvas id="chart-nutrition-bmi" height="180" role="img" aria-label="個案 BMI 分佈圖"></canvas>
+                </div>
+                <div class="chart-box">
+                    <div class="chart-box-title">血壓風險分佈</div>
+                    <canvas id="chart-nutrition-bp" height="180" role="img" aria-label="血壓風險分佈圖"></canvas>
+                </div>
+            </div>
+            <div class="dashboard-panels" style="margin-top:24px">
+                <div class="card">
+                    <h3>風險摘要</h3>
+                    <div id="nutrition-risk-summary"></div>
+                </div>
+                <div class="card">
+                    <h3>AI 飲食建議摘要</h3>
+                    <div id="nutrition-ai-summary"></div>
+                    <button class="secondary-button" onclick="showSection('diet-advice-section')" style="margin-top:12px">查看完整建議</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Case List -->
+        <section id="case-list-section" class="content-section">
+            <h2 class="section-title">個案列表</h2>
+            <div class="card table-card">
+                <table>
+                    <thead>
+                        <tr><th>個案姓名</th><th>授權範圍</th><th>授權期限</th><th>狀態</th><th>操作</th></tr>
+                    </thead>
+                    <tbody id="case-list-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- BMI Analysis -->
+        <section id="bmi-analysis-section" class="content-section">
+            <h2 class="section-title">BMI 分析</h2>
+            <div id="bmi-analysis-panel"></div>
+        </section>
+
+        <!-- Weight Trend -->
+        <section id="weight-trend-section" class="content-section">
+            <h2 class="section-title">體重趨勢</h2>
+            <div class="card">
+                <div class="chart-card"><canvas id="nutrition-weight-chart" height="220" role="img" aria-label="個案體重趨勢圖"></canvas></div>
+            </div>
+        </section>
+
+        <!-- Blood Pressure -->
+        <section id="blood-pressure-section" class="content-section">
+            <h2 class="section-title">血壓提醒</h2>
+            <div id="blood-pressure-panel"></div>
+        </section>
+
+        <!-- Diet Advice -->
+        <section id="diet-advice-section" class="content-section">
+            <h2 class="section-title">AI 飲食建議</h2>
+            <div id="diet-advice-panel"></div>
+        </section>
+
+        <!-- Nutrition Record -->
+        <section id="nutrition-record-section" class="content-section">
+            <h2 class="section-title">營養紀錄</h2>
+            <div class="card form-card">
+                <h3>新增營養紀錄</h3>
+                <form onsubmit="addNutritionRecord(event)">
+                    <div class="form-row-2">
+                        <div class="form-group">
+                            <label for="nutrition-case">個案姓名</label>
+                            <input id="nutrition-case" type="text" placeholder="個案姓名" required />
+                        </div>
+                        <div class="form-group">
+                            <label for="nutrition-title">建議標題</label>
+                            <input id="nutrition-title" type="text" placeholder="飲食調整建議" required />
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="nutrition-content">建議內容</label>
+                        <textarea id="nutrition-content" rows="3" placeholder="詳細飲食建議..." required></textarea>
+                    </div>
+                    <button type="submit" class="primary-button">新增紀錄</button>
+                </form>
+            </div>
+            <div class="card" style="margin-top:16px">
+                <h3>營養紀錄列表</h3>
+                <div id="nutrition-record-list" class="record-list"></div>
+            </div>
+        </section>
+
+        <!-- Notifications -->
+        <section id="notification-section" class="content-section">
+            <h2 class="section-title">通知中心</h2>
+            <div class="card">
+                <div id="notification-list" class="timeline"></div>
+            </div>
+        </section>
+    </div>
+
+    <div id="chart-tooltip" class="chart-tooltip"></div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="shared.js"></script>
+    <script>
+        (async function () {
+            await initDefaultAccounts();
+            saveState();
+            showSection("nutrition-dashboard-section");
+        })();
+    </script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+{
+    "name": "ai-health-platform",
+    "private": true,
+    "description": "Static vanilla JS/HTML/CSS app — no build step, open index.html directly. package.json exists only to support dev-time linting.",
+    "scripts": {
+        "lint": "eslint shared.js"
+    },
+    "devDependencies": {
+        "eslint": "^9.17.0"
+    }
+}

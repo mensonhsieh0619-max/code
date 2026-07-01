@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>管理員 | AI Health Platform</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+    <link rel="manifest" href="manifest.json" />
+    <meta name="theme-color" content="#0f766e" />
+    <script>
+        if (localStorage.getItem("ai_health_platform_theme") === "dark") document.documentElement.dataset.theme = "dark";
+    </script>
+    <script>
+        (function () {
+            try {
+                const s = JSON.parse(localStorage.getItem("ai_health_platform_login_state_v2") || "{}");
+                if (s.loginAt && Date.now() - s.loginAt > 12 * 60 * 60 * 1000) { window.location.href = "index.html"; }
+                if (!s.currentAccount && !s.demoMode) { window.location.href = "index.html"; }
+                if (s.role !== "admin") { window.location.href = "index.html"; }
+            } catch (e) { window.location.href = "index.html"; }
+        })();
+    </script>
+</head>
+<body class="page-body">
+    <!-- Navbar -->
+    <nav class="navbar">
+        <div class="nav-brand" onclick="showSection('admin-dashboard-section')" style="cursor:pointer">
+            <span class="nav-brand-icon">AI</span>
+            <div>
+                <div class="nav-brand-name">AI Health</div>
+                <div class="nav-brand-sub">系統管理員</div>
+            </div>
+        </div>
+        <button class="nav-toggle" id="nav-toggle" onclick="toggleNavMenu()" aria-label="選單">
+            <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+                <rect y="3" width="20" height="2" rx="1"/>
+                <rect y="9" width="20" height="2" rx="1"/>
+                <rect y="15" width="20" height="2" rx="1"/>
+            </svg>
+        </button>
+        <div class="nav-menu" id="nav-menu">
+            <button class="nav-btn" data-section="admin-dashboard-section" onclick="showSection('admin-dashboard-section')">首頁</button>
+            <div class="nav-dropdown-wrap">
+                <button class="nav-btn" onclick="toggleDropdown(this)">帳號管理 <span class="nav-caret">▾</span></button>
+                <div class="nav-dropdown">
+                    <button class="nav-dropdown-item" data-section="account-management-section" onclick="showSection('account-management-section')">帳號列表</button>
+                    <button class="nav-dropdown-item" data-section="user-management-section" onclick="showSection('user-management-section')">使用者資料</button>
+                </div>
+            </div>
+            <div class="nav-dropdown-wrap">
+                <button class="nav-btn" onclick="toggleDropdown(this)">FHIR <span class="nav-caret">▾</span></button>
+                <div class="nav-dropdown">
+                    <button class="nav-dropdown-item" data-section="fhir-record-section" onclick="showSection('fhir-record-section')">FHIR 紀錄</button>
+                    <button class="nav-dropdown-item" data-section="observation-record-section" onclick="showSection('observation-record-section')">Observation 紀錄</button>
+                    <button class="nav-dropdown-item" data-section="authorization-record-section" onclick="showSection('authorization-record-section')">授權紀錄</button>
+                    <button class="nav-dropdown-item" data-section="blockchain-section" onclick="showSection('blockchain-section')">區塊鏈紀錄</button>
+                </div>
+            </div>
+            <div class="nav-dropdown-wrap">
+                <button class="nav-btn" onclick="toggleDropdown(this)">競賽 <span class="nav-caret">▾</span></button>
+                <div class="nav-dropdown">
+                    <button class="nav-dropdown-item" data-section="registration-list-section" onclick="showSection('registration-list-section')">報名列表</button>
+                    <button class="nav-dropdown-item" data-section="registration-review-section" onclick="showSection('registration-review-section')">報名審核</button>
+                </div>
+            </div>
+            <button class="nav-btn" data-section="notification-section" onclick="showSection('notification-section')">
+                通知
+                <span class="nav-notif-badge hidden" id="nav-notif-count"></span>
+            </button>
+            <button class="nav-btn" data-section="system-setting-section" onclick="showSection('system-setting-section')">系統設定</button>
+        </div>
+        <div class="nav-right">
+            <button class="nav-notif-btn dark-mode-toggle" onclick="toggleDarkMode()" title="切換深色模式" aria-label="切換深色模式" aria-pressed="false">🌙</button>
+            <button class="nav-notif-btn" onclick="showSection('notification-section')" title="通知" aria-label="通知">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+                    <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+                </svg>
+                <span class="nav-notif-badge hidden" id="nav-notif-count-icon"></span>
+            </button>
+            <div class="nav-user-wrap" id="nav-user-wrap">
+                <button class="nav-user-btn" onclick="toggleUserMenu()">
+                    <span class="nav-user-avatar" id="nav-avatar">A</span>
+                    <span id="nav-user-name">管理員</span>
+                    <span class="nav-caret">▾</span>
+                </button>
+                <div class="nav-user-menu">
+                    <div class="nav-user-info">
+                        <strong id="nav-full-name">系統管理員</strong>
+                        <small id="nav-role-label">系統管理員</small>
+                    </div>
+                    <hr />
+                    <button class="logout-btn" onclick="logoutAccount()">登出</button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <div class="page-content">
+        <!-- Dashboard -->
+        <section id="admin-dashboard-section" class="content-section active">
+            <h2 class="section-title">系統管理員首頁</h2>
+            <div id="admin-dashboard-cards" class="kpi-grid"></div>
+            <div class="chart-row-4" style="margin-top:24px">
+                <div class="chart-box">
+                    <div class="chart-box-title">帳號角色分佈</div>
+                    <canvas id="chart-admin-roles" height="180" role="img" aria-label="帳號角色分佈圖"></canvas>
+                </div>
+                <div class="chart-box">
+                    <div class="chart-box-title">報名審核狀態</div>
+                    <canvas id="chart-admin-reg" height="180" role="img" aria-label="報名審核狀態圖"></canvas>
+                </div>
+                <div class="chart-box">
+                    <div class="chart-box-title">FHIR 資源統計</div>
+                    <canvas id="chart-admin-fhir" height="180" role="img" aria-label="FHIR 資源統計圖"></canvas>
+                </div>
+                <div class="chart-box">
+                    <div class="chart-box-title">授權有效狀態</div>
+                    <canvas id="chart-admin-auth" height="180" role="img" aria-label="授權有效狀態圖"></canvas>
+                </div>
+            </div>
+            <div class="card" style="margin-top:24px">
+                <h3>系統說明</h3>
+                <div id="admin-system-summary"></div>
+            </div>
+        </section>
+
+        <!-- Account Management -->
+        <section id="account-management-section" class="content-section">
+            <h2 class="section-title">帳號列表</h2>
+            <div class="card table-card">
+                <table>
+                    <thead>
+                        <tr><th>姓名</th><th>帳號</th><th>Email</th><th>角色</th><th>狀態</th><th>操作</th></tr>
+                    </thead>
+                    <tbody id="account-management-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- User Management -->
+        <section id="user-management-section" class="content-section">
+            <h2 class="section-title">使用者資料</h2>
+            <div class="card table-card">
+                <table>
+                    <thead>
+                        <tr><th>姓名</th><th>Email</th><th>角色</th><th>單位</th><th>手機</th></tr>
+                    </thead>
+                    <tbody id="user-management-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- FHIR Record -->
+        <section id="fhir-record-section" class="content-section">
+            <h2 class="section-title">FHIR 紀錄</h2>
+            <div id="fhir-record-list"></div>
+        </section>
+
+        <!-- Observation Record -->
+        <section id="observation-record-section" class="content-section">
+            <h2 class="section-title">Observation 紀錄</h2>
+            <div id="observation-record-panel"></div>
+        </section>
+
+        <!-- Authorization Record -->
+        <section id="authorization-record-section" class="content-section">
+            <h2 class="section-title">授權紀錄</h2>
+            <div class="card table-card">
+                <table>
+                    <thead>
+                        <tr><th>使用者</th><th>授權對象</th><th>授權範圍</th><th>Token / 狀態</th><th>建立時間</th></tr>
+                    </thead>
+                    <tbody id="authorization-record-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Blockchain -->
+        <section id="blockchain-section" class="content-section">
+            <h2 class="section-title">區塊鏈紀錄</h2>
+            <p class="disclaimer-note">此頁面為模擬展示：雜湊值以簡易演算法產生，紀錄仍儲存在瀏覽器 localStorage 中，並非真實區塊鏈網路，不具備防竄改保證。</p>
+            <div class="card table-card">
+                <table>
+                    <thead>
+                        <tr><th>Hash</th><th>來源</th><th>事件</th><th>時間</th></tr>
+                    </thead>
+                    <tbody id="blockchain-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Registration List -->
+        <section id="registration-list-section" class="content-section">
+            <h2 class="section-title">報名列表</h2>
+            <div class="card table-card">
+                <table>
+                    <thead>
+                        <tr><th>報名 ID</th><th>團隊名稱</th><th>作品名稱</th><th>類別</th><th>負責人</th><th>Email</th><th>狀態</th><th>操作</th></tr>
+                    </thead>
+                    <tbody id="registration-list-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Registration Review -->
+        <section id="registration-review-section" class="content-section">
+            <h2 class="section-title">報名審核</h2>
+            <div id="registration-review-panel"></div>
+        </section>
+
+        <!-- Notifications -->
+        <section id="notification-section" class="content-section">
+            <h2 class="section-title">通知中心</h2>
+            <div class="card">
+                <div id="notification-list" class="timeline"></div>
+            </div>
+        </section>
+
+        <!-- System Setting -->
+        <section id="system-setting-section" class="content-section">
+            <h2 class="section-title">系統設定</h2>
+            <div class="card">
+                <div id="system-notification-list" class="timeline" style="margin-bottom:20px"></div>
+                <button class="danger-button" onclick="resetDemoData()">重置 Demo 資料</button>
+            </div>
+        </section>
+    </div>
+
+    <div id="chart-tooltip" class="chart-tooltip"></div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script src="shared.js"></script>
+    <script>
+        (async function () {
+            await initDefaultAccounts();
+            saveState();
+            showSection("admin-dashboard-section");
+        })();
+    </script>
+</body>
+</html>

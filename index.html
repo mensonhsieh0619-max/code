@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <script>
+        if (localStorage.getItem("ai_health_platform_theme") === "dark") document.documentElement.dataset.theme = "dark";
+    </script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="app-feature" content="profile-height-localStorage" />
+    <meta name="app-feature" content="registration-management-ui" />
+    <meta name="app-feature" content="health-data-ai-analysis-rwd" />
+    <meta name="app-fix" content="ai-analysis-stable-target-ids" />
+    <title>登入 | AI Health Platform</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+    <link rel="manifest" href="manifest.json" />
+    <meta name="theme-color" content="#0f766e" />
+</head>
+<body class="auth-body">
+    <div class="auth-page">
+        <div class="auth-container">
+            <!-- Hero -->
+            <div class="auth-hero">
+                <div class="auth-hero-inner">
+                    <div class="auth-brand">
+                        <span class="auth-brand-icon">AI</span>
+                        <div>
+                            <div class="auth-brand-name">AI Health Platform</div>
+                            <div class="auth-brand-sub">FHIR 健康追蹤與運動管理平台</div>
+                        </div>
+                    </div>
+                    <h1 class="auth-hero-title">智能健康管理<br/>從數據開始</h1>
+                    <p class="auth-hero-desc">整合 HL7 FHIR R4 標準、AI 健康建議、角色權限管理與區塊鏈授權紀錄，打造全方位健康追蹤平台。</p>
+                    <div class="auth-chips">
+                        <span class="auth-chip">FHIR R4</span>
+                        <span class="auth-chip">AI 建議</span>
+                        <span class="auth-chip">角色權限</span>
+                        <span class="auth-chip">區塊鏈</span>
+                        <span class="auth-chip">競賽報名</span>
+                    </div>
+                    <div class="auth-hero-stats">
+                        <div class="auth-stat"><strong>4</strong><span>使用角色</span></div>
+                        <div class="auth-stat"><strong>7+</strong><span>FHIR 資源型別</span></div>
+                        <div class="auth-stat"><strong>100%</strong><span>前端展示</span></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Card -->
+            <div class="auth-card-wrap">
+                <div class="auth-card">
+                    <h2 class="auth-card-title">歡迎使用</h2>
+                    <div class="auth-tabs" role="tablist">
+                        <button class="active" data-tab="login" onclick="switchAuthTab('login')">帳號登入</button>
+                        <button data-tab="register" onclick="switchAuthTab('register')">帳號註冊</button>
+                    </div>
+
+                    <!-- Login -->
+                    <div class="auth-form-panel" id="login-panel">
+                        <form onsubmit="loginAccount(event)">
+                            <div class="form-group">
+                                <label for="login-username">帳號</label>
+                                <input id="login-username" type="text" placeholder="輸入帳號" required autocomplete="username" />
+                            </div>
+                            <div class="form-group">
+                                <label for="login-password">密碼</label>
+                                <input id="login-password" type="password" placeholder="輸入密碼" required autocomplete="current-password" />
+                            </div>
+                            <button type="submit" class="auth-submit-btn">登入</button>
+                        </form>
+                        <div class="demo-divider"><span>或使用 Demo 快速體驗</span></div>
+                        <div class="demo-grid">
+                            <button class="demo-btn" onclick="demoLogin('user')">
+                                <span class="demo-role-icon">👤</span><span>一般使用者</span>
+                            </button>
+                            <button class="demo-btn" onclick="demoLogin('coach')">
+                                <span class="demo-role-icon">🏋️</span><span>健身教練</span>
+                            </button>
+                            <button class="demo-btn" onclick="demoLogin('nutritionist')">
+                                <span class="demo-role-icon">🥗</span><span>營養師</span>
+                            </button>
+                            <button class="demo-btn" onclick="demoLogin('admin')">
+                                <span class="demo-role-icon">⚙️</span><span>系統管理員</span>
+                            </button>
+                        </div>
+                        <p class="auth-hint">Demo 帳號密碼：user01 / 123456（各角色同理）</p>
+                    </div>
+
+                    <!-- Register -->
+                    <div class="auth-form-panel hidden" id="register-panel">
+                        <form onsubmit="registerAccount(event)">
+                            <div class="form-row-2">
+                                <div class="form-group">
+                                    <label for="register-name">姓名</label>
+                                    <input id="register-name" type="text" placeholder="真實姓名" required />
+                                </div>
+                                <div class="form-group">
+                                    <label for="register-role">角色</label>
+                                    <select id="register-role" required>
+                                        <option value="">選擇角色</option>
+                                        <option value="user">一般使用者</option>
+                                        <option value="coach">健身教練</option>
+                                        <option value="nutritionist">營養師</option>
+                                        <option value="admin">系統管理員</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="register-email">Email</label>
+                                <input id="register-email" type="email" placeholder="example@mail.com" required autocomplete="email" />
+                            </div>
+                            <div class="form-group">
+                                <label for="register-username">帳號</label>
+                                <input id="register-username" type="text" placeholder="英數字帳號" required autocomplete="username" />
+                            </div>
+                            <div class="form-row-2">
+                                <div class="form-group">
+                                    <label for="register-password">密碼</label>
+                                    <input id="register-password" type="password" placeholder="至少 6 碼" required autocomplete="new-password" />
+                                </div>
+                                <div class="form-group">
+                                    <label for="register-password-confirm">確認密碼</label>
+                                    <input id="register-password-confirm" type="password" placeholder="再次輸入" required autocomplete="new-password" />
+                                </div>
+                            </div>
+                            <div class="form-row-2">
+                                <div class="form-group">
+                                    <label for="register-phone">手機</label>
+                                    <input id="register-phone" type="tel" placeholder="09XXXXXXXX" required />
+                                </div>
+                                <div class="form-group">
+                                    <label for="register-organization">單位</label>
+                                    <input id="register-organization" type="text" placeholder="學校或組織" required />
+                                </div>
+                            </div>
+                            <button type="submit" class="auth-submit-btn">建立帳號</button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="ai-health-panel" hidden aria-hidden="true">
+        <span id="ai-score-value">--</span>
+        <span id="ai-risk-level">目前尚無資料</span>
+        <div id="ai-risk-tags"></div>
+        <p id="ai-summary">目前尚無健康資料，請先新增健康紀錄以產生 AI 分析。</p>
+        <p id="ai-diet-advice"></p>
+        <p id="ai-exercise-advice"></p>
+        <p id="ai-sleep-advice"></p>
+        <p id="ai-medical-advice"></p>
+        <p id="ai-lifestyle-advice"></p>
+        <p id="ai-trend-summary"></p>
+    </div>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+    <script src="shared.js"></script>
+    <script>
+        (async function () {
+            await initDefaultAccounts();
+            saveState();
+            const s = loadState();
+            if ((s.currentAccount || s.demoMode) && s.role && s.role !== "guest") {
+                const pages = { user: "app-user.html", coach: "app-coach.html", nutritionist: "app-nutrition.html", admin: "app-admin.html" };
+                if (pages[s.role]) window.location.href = pages[s.role];
+            }
+        })();
+    </script>
+</body>
+</html>
