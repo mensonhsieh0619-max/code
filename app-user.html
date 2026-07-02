@@ -58,6 +58,7 @@
                 </div>
             </div>
             <button class="nav-btn" data-section="share-section" onclick="showSection('share-section')">授權分享</button>
+            <button class="nav-btn" data-section="wearable-import-section" onclick="showSection('wearable-import-section')">穿戴裝置匯入</button>
             <button class="nav-btn" data-section="notification-section" onclick="showSection('notification-section')">
                 通知
                 <span class="nav-notif-badge hidden" id="nav-notif-count"></span>
@@ -273,6 +274,67 @@
                         <div><span>有效期限</span><strong id="qr-expire">-</strong></div>
                         <div><span>驗證 Token</span><code id="qr-token">-</code></div>
                     </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="wearable-import-section" class="content-section">
+            <div class="section-heading">
+                <h2>穿戴裝置資料匯入</h2>
+                <p>模擬 Apple Health、Garmin、Fitbit 等穿戴裝置資料轉換為 FHIR Observation。</p>
+            </div>
+            <div class="wearable-grid">
+                <article class="wearable-card">
+                    <div class="wearable-card-head">
+                        <span class="wearable-icon apple">AH</span>
+                        <div>
+                            <span class="wearable-source-badge">Apple Health</span>
+                            <h3>Apple Health</h3>
+                        </div>
+                    </div>
+                    <p>支援資料：步數、心率、睡眠、消耗熱量</p>
+                    <button type="button" class="primary-button" onclick="importWearableData('Apple Health')">模擬匯入</button>
+                </article>
+                <article class="wearable-card">
+                    <div class="wearable-card-head">
+                        <span class="wearable-icon garmin">GM</span>
+                        <div>
+                            <span class="wearable-source-badge">Garmin</span>
+                            <h3>Garmin</h3>
+                        </div>
+                    </div>
+                    <p>支援資料：運動時間、心率、熱量、運動類型</p>
+                    <button type="button" class="primary-button" onclick="importWearableData('Garmin')">模擬匯入</button>
+                </article>
+                <article class="wearable-card">
+                    <div class="wearable-card-head">
+                        <span class="wearable-icon fitbit">FB</span>
+                        <div>
+                            <span class="wearable-source-badge">Fitbit</span>
+                            <h3>Fitbit</h3>
+                        </div>
+                    </div>
+                    <p>支援資料：步數、睡眠、心率、活動量</p>
+                    <button type="button" class="primary-button" onclick="importWearableData('Fitbit')">模擬匯入</button>
+                </article>
+            </div>
+            <div class="card wearable-import-history" id="wearable-import-history">
+                <h3>匯入紀錄</h3>
+                <div class="health-record-table-wrapper">
+                    <table class="wearable-history-table">
+                        <thead>
+                            <tr>
+                                <th>匯入時間</th>
+                                <th>裝置來源</th>
+                                <th>步數</th>
+                                <th>心率</th>
+                                <th>睡眠</th>
+                                <th>運動時間</th>
+                                <th>狀態</th>
+                            </tr>
+                        </thead>
+                        <tbody id="wearable-import-history-body"></tbody>
+                    </table>
                 </div>
             </div>
         </section>

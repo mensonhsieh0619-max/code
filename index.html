@@ -9,6 +9,8 @@
     <meta name="app-feature" content="profile-height-localStorage" />
     <meta name="app-feature" content="registration-management-ui" />
     <meta name="app-feature" content="health-data-ai-analysis-rwd" />
+    <meta name="app-feature" content="health-summary-ai-dashboard-report" />
+    <meta name="app-feature" content="security-privacy-center" />
     <meta name="app-fix" content="ai-analysis-stable-target-ids" />
     <title>登入 | AI Health Platform</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -16,7 +18,10 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="style.css" />
     <link rel="manifest" href="manifest.json" />
-    <meta name="theme-color" content="#0f766e" />
+    <meta name="theme-color" content="#0ea5e9" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="AI Health" />
 </head>
 <body class="auth-body">
     <div class="auth-page">
@@ -140,6 +145,24 @@
                     </div>
                 </div>
             </div>
+            <section class="pwa-install-card" id="pwa-install-card" aria-labelledby="pwa-card-title">
+                <div>
+                    <span class="pwa-card-badge">PWA</span>
+                    <h2 id="pwa-card-title">PWA 手機版網站</h2>
+                    <p>可將本平台加入手機主畫面，像 App 一樣使用。</p>
+                    <ul>
+                        <li>可加入手機主畫面</li>
+                        <li>支援離線開啟</li>
+                        <li>適合每日健康紀錄</li>
+                        <li>不需下載原生 App</li>
+                    </ul>
+                    <p class="pwa-install-message" id="pwa-install-message" hidden>請使用 Chrome 或 Edge 的加入主畫面功能</p>
+                </div>
+                <div class="pwa-install-actions">
+                    <button type="button" class="primary-button" id="pwa-install-button">安裝 App</button>
+                    <button type="button" class="secondary-button" id="pwa-install-later">稍後提醒</button>
+                </div>
+            </section>
         </div>
     </div>
 
@@ -167,6 +190,70 @@
                 if (pages[s.role]) window.location.href = pages[s.role];
             }
         })();
+    </script>
+    <script>
+        let deferredPWAInstallPrompt = null;
+
+        function showPWAToast(message) {
+            if (typeof showToast === "function") {
+                showToast(message);
+                return;
+            }
+            const toast = document.getElementById("toast");
+            if (!toast) return;
+            toast.textContent = message;
+            toast.classList.add("show");
+            setTimeout(() => toast.classList.remove("show"), 2800);
+        }
+
+        window.addEventListener("beforeinstallprompt", (event) => {
+            event.preventDefault();
+            deferredPWAInstallPrompt = event;
+            const message = document.getElementById("pwa-install-message");
+            if (message) message.hidden = true;
+        });
+
+        window.addEventListener("DOMContentLoaded", () => {
+            const installButton = document.getElementById("pwa-install-button");
+            const laterButton = document.getElementById("pwa-install-later");
+            const message = document.getElementById("pwa-install-message");
+
+            installButton?.addEventListener("click", async () => {
+                if (!deferredPWAInstallPrompt) {
+                    if (message) message.hidden = false;
+                    showPWAToast("請使用 Chrome 或 Edge 的加入主畫面功能");
+                    return;
+                }
+
+                deferredPWAInstallPrompt.prompt();
+                await deferredPWAInstallPrompt.userChoice;
+                deferredPWAInstallPrompt = null;
+            });
+
+            laterButton?.addEventListener("click", () => {
+                document.getElementById("pwa-install-card")?.classList.add("pwa-install-dismissed");
+                showPWAToast("稍後仍可從瀏覽器選單加入主畫面");
+            });
+        });
+
+        if (!window.__aiHealthNetworkStatusToast) {
+            window.__aiHealthNetworkStatusToast = true;
+            window.addEventListener("offline", () => {
+                showPWAToast("目前為離線模式，仍可查看已快取資料。");
+            });
+
+            window.addEventListener("online", () => {
+                showPWAToast("網路已恢復。");
+            });
+        }
+
+        if ("serviceWorker" in navigator) {
+            window.addEventListener("load", () => {
+                navigator.serviceWorker.register("./service-worker.js")
+                    .then(() => console.log("Service Worker registered"))
+                    .catch(err => console.error("Service Worker registration failed:", err));
+            });
+        }
     </script>
 </body>
 </html>
