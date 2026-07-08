@@ -3619,3 +3619,2238 @@ window.deleteHealthRecord = deleteHealthRecord;
 window.resetDemoData = resetDemoData;
 if (typeof importWearableData === "function") window.importWearableData = importWearableData;
 window.renderAll = renderAll;
+
+// FHIR Validator and HAPI FHIR Server demo.
+window.rolePermissions = {
+    ...(window.rolePermissions || {}),
+    user: Array.from(new Set([...(window.rolePermissions?.user || []), "fhir-validator-section"])),
+    admin: Array.from(new Set([...(window.rolePermissions?.admin || []), "fhir-validator-section"])),
+    coach: (window.rolePermissions?.coach || []).filter((item) => item !== "fhir-validator-section"),
+    nutritionist: (window.rolePermissions?.nutritionist || []).filter((item) => item !== "fhir-validator-section")
+};
+
+if (typeof SECTION_LABELS === "object") SECTION_LABELS["fhir-validator-section"] = "FHIR 驗證";
+
+var baseGenerateFHIRBundleBeforeValidator = generateFHIRBundle;
+generateFHIRBundle = function validatorFHIRBundle(accountId = activeUserId()) {
+    let bundle = baseGenerateFHIRBundleBeforeValidator(accountId);
+    const fallbackUser = state.accounts.find((item) => item.role === "user");
+    if ((!bundle?.entry || bundle.entry.length === 0) && fallbackUser) {
+        bundle = baseGenerateFHIRBundleBeforeValidator(fallbackUser.id);
+    }
+    const account = state.accounts.find((item) => item.id === accountId && item.role === "user") || fallbackUser || {};
+    if (bundle && bundle.resourceType === "Bundle") {
+        bundle.id = bundle.id || "bundle-demo-001";
+        (bundle.entry || []).forEach((entry) => {
+            const resource = entry?.resource;
+            if (!resource) return;
+            if (resource.resourceType === "Patient") {
+                resource.gender = resource.gender || state.patient?.gender || "male";
+                resource.birthDate = resource.birthDate || state.patient?.birthday || "1990-01-01";
+            }
+            if (resource.resourceType === "Observation") {
+                resource.subject = resource.subject || { reference: `Patient/${account.id || activeUserId()}` };
+                resource.effectiveDateTime = resource.effectiveDateTime || new Date().toISOString();
+            }
+        });
+    }
+    return bundle;
+};
+
+function ensureFhirSyncLogs() {
+    if (!Array.isArray(state.fhirSyncLogs)) {
+        state.fhirSyncLogs = [
+            {
+                id: "SYNC-20260628-001",
+                server: "https://hapi.fhir.org/baseR4",
+                bundleId: "bundle-demo-001",
+                patientId: "patient-demo-001",
+                observationCount: 6,
+                mode: "mock",
+                status: "Success",
+                time: "2026-06-28 10:30"
+            }
+        ];
+        saveState();
+    }
+}
+
+function fhirBundleForValidation() {
+    return generateFHIRBundle(activeUserId());
+}
+
+function addFhirCheck(results, label, severity, message) {
+    results.items.push({ label, severity, message });
+    if (severity === "pass") results.passed += 1;
+    if (severity === "warning") results.warnings += 1;
+    if (severity === "error") results.errors += 1;
+}
+
+function validateFHIRBundle() {
+    const bundle = fhirBundleForValidation();
+    const results = { passed: 0, warnings: 0, errors: 0, status: "Valid", items: [], bundle };
+    const entries = Array.isArray(bundle?.entry) ? bundle.entry : [];
+
+    const bundleErrors = [];
+    if (bundle?.resourceType !== "Bundle") bundleErrors.push("resourceType must be Bundle");
+    if (!bundle?.type) bundleErrors.push("type is required");
+    if (!Array.isArray(bundle?.entry)) bundleErrors.push("entry must be an array");
+    if (!entries.length) bundleErrors.push("entry.length must be greater than 0");
+    addFhirCheck(results, "Bundle", bundleErrors.length ? "error" : "pass", bundleErrors.join(", ") || "Bundle structure is valid");
+
+    const patient = entries.map((entry) => entry.resource).find((resource) => resource?.resourceType === "Patient");
+    const patientErrors = [];
+    if (!patient) {
+        patientErrors.push("Patient resource is required");
+    } else {
+        if (patient.resourceType !== "Patient") patientErrors.push("resourceType must be Patient");
+        if (!patient.id) patientErrors.push("id is required");
+        if (!patient.name || !patient.name.length) patientErrors.push("name is required");
+        if (!patient.gender) patientErrors.push("gender is required");
+        if (!patient.birthDate) patientErrors.push("birthDate is required");
+    }
+    addFhirCheck(results, "Patient", patientErrors.length ? "error" : "pass", patientErrors.join(", ") || "Patient fields are valid");
+
+    const observationLabels = [
+        { match: "85354-9", label: "Blood Pressure Observation" },
+        { match: "29463-7", label: "Body Weight Observation" },
+        { match: "8867-4", label: "Heart Rate Observation" },
+        { match: "39156-5", label: "BMI Observation" },
+        { match: "41950-7", label: "Steps Observation" },
+        { match: "93832-4", label: "Sleep Observation" }
+    ];
+    const observations = entries.map((entry) => entry.resource).filter((resource) => resource?.resourceType === "Observation");
+
+    observationLabels.forEach((target) => {
+        const observation = observations.find((resource) => {
+            const codings = resource?.code?.coding || [];
+            return codings.some((coding) => coding.code === target.match || String(coding.display || "").includes(target.label.replace(" Observation", "")));
+        });
+        const errors = [];
+        if (!observation) {
+            errors.push("Observation is required");
+        } else {
+            if (observation.resourceType !== "Observation") errors.push("resourceType must be Observation");
+            if (observation.status !== "final") errors.push("status must be final");
+            if (!observation.code) errors.push("code is required");
+            if (!observation.subject?.reference) errors.push("subject.reference is required");
+            if (!observation.effectiveDateTime) errors.push("effectiveDateTime is required");
+            if (!observation.valueQuantity && !observation.component) errors.push("valueQuantity or component is required");
+        }
+        addFhirCheck(results, target.label, errors.length ? "error" : "pass", errors.join(", ") || `${target.label} is valid`);
+    });
+
+    const extraObservations = observations.filter((resource) => {
+        const code = resource?.code?.coding?.[0]?.code;
+        return !observationLabels.some((target) => target.match === code);
+    });
+    extraObservations.forEach((resource) => {
+        const display = resource?.code?.coding?.[0]?.display || "Observation";
+        const missing = [];
+        if (resource.status !== "final") missing.push("status must be final");
+        if (!resource.code) missing.push("code is required");
+        if (!resource.subject?.reference) missing.push("subject.reference is required");
+        if (!resource.effectiveDateTime) missing.push("effectiveDateTime is required");
+        if (!resource.valueQuantity && !resource.component) missing.push("valueQuantity or component is required");
+        addFhirCheck(results, `${display} Observation`, missing.length ? "warning" : "pass", missing.join(", ") || "Additional Observation is valid");
+    });
+
+    if (results.errors > 0) results.status = "Error";
+    else if (results.warnings > 0) results.status = "Warning";
+    return results;
+}
+
+function fhirStatusIcon(severity) {
+    if (severity === "pass") return '<span class="fhir-result-icon pass">✓</span>';
+    if (severity === "warning") return '<span class="fhir-result-icon warning">!</span>';
+    return '<span class="fhir-result-icon error">×</span>';
+}
+
+function renderFHIRValidation() {
+    ensureFHIRValidatorUI();
+    ensureFhirSyncLogs();
+    const section = document.getElementById("fhir-validator-section");
+    if (!section) return;
+    const results = validateFHIRBundle();
+    const json = JSON.stringify(results.bundle, null, 2);
+    const statusClass = results.status.toLowerCase();
+    const displayItems = results.items.filter((item) => item.label !== "Bundle");
+    section.innerHTML = `
+        <div class="section-heading fhir-validator-heading">
+            <div>
+                <h2>FHIR 驗證中心</h2>
+                <p>使用目前 generateFHIRBundle() 產生的 FHIR Bundle，展示前端驗證、JSON 預覽與 HAPI FHIR Server 串接流程。</p>
+            </div>
+            <span class="fhir-status-badge ${statusClass}">${results.status}</span>
+        </div>
+
+        <div class="fhir-flow-card">
+            <div class="fhir-flow-node">健康資料</div>
+            <div class="fhir-flow-arrow">→</div>
+            <div class="fhir-flow-node">FHIR Converter</div>
+            <div class="fhir-flow-arrow">→</div>
+            <div class="fhir-flow-node">Bundle</div>
+            <div class="fhir-flow-arrow">→</div>
+            <div class="fhir-flow-node">Validator</div>
+            <div class="fhir-flow-arrow">→</div>
+            <div class="fhir-flow-node">HAPI FHIR Server</div>
+            <div class="fhir-flow-arrow">→</div>
+            <div class="fhir-flow-node">Read Resource</div>
+            <div class="fhir-flow-arrow">→</div>
+            <div class="fhir-flow-node">顯示結果</div>
+        </div>
+
+        <div class="fhir-validator-grid">
+            <article class="card fhir-validator-card">
+                <div class="fhir-card-title-row">
+                    <h3>FHIR Validator</h3>
+                    <span class="fhir-status-badge ${statusClass}">${results.status}</span>
+                </div>
+                <div class="fhir-validation-kpis">
+                    <div><span>通過數</span><strong>${results.passed}</strong></div>
+                    <div><span>警告數</span><strong>${results.warnings}</strong></div>
+                    <div><span>錯誤數</span><strong>${results.errors}</strong></div>
+                </div>
+                <ul class="fhir-validation-list">
+                    ${displayItems.map((item) => `
+                        <li class="${item.severity}">
+                            ${fhirStatusIcon(item.severity)}
+                            <span>${escapeHTML(item.label)}：${item.severity === "pass" ? "通過" : item.severity === "warning" ? "警告" : "錯誤"}</span>
+                            <small>${escapeHTML(item.message)}</small>
+                        </li>
+                    `).join("")}
+                </ul>
+            </article>
+
+            <article class="card hapi-demo-card">
+                <div class="fhir-card-title-row">
+                    <h3>HAPI FHIR Server 同步展示</h3>
+                    <span class="hapi-mode-badge" id="hapi-mode-badge">${escapeHTML(state.hapiMode || "mock")}</span>
+                </div>
+                <div class="form-group">
+                    <label for="hapi-server-url">Server URL</label>
+                    <input id="hapi-server-url" type="url" value="${escapeHTML(state.hapiServerUrl || "https://hapi.fhir.org/baseR4")}" />
+                </div>
+                <div class="fhir-actions">
+                    <button type="button" class="secondary-button" onclick="testHapiConnection()">測試連線</button>
+                    <button type="button" class="primary-button" onclick="uploadBundleToHapi()">模擬上傳 Bundle</button>
+                    <button type="button" class="secondary-button" onclick="readHapiPatient()">讀取 Patient</button>
+                    <button type="button" class="secondary-button" onclick="clearFhirSyncLogs()">清除同步紀錄</button>
+                </div>
+                <p class="hapi-status-text" id="hapi-status-text">${escapeHTML(state.hapiStatusText || "尚未測試連線。若 CORS 或網路限制失敗，系統會自動切換為模擬模式。")}</p>
+                <div id="hapi-sync-steps" class="hapi-sync-steps"></div>
+            </article>
+        </div>
+
+        <article class="card fhir-json-card">
+            <div class="fhir-card-title-row">
+                <h3>FHIR JSON 預覽</h3>
+                <div class="fhir-actions">
+                    <button type="button" class="secondary-button" onclick="copyFHIRJson()">複製 JSON</button>
+                    <button type="button" class="secondary-button" onclick="renderFHIRValidation()">重新驗證</button>
+                    <button type="button" class="primary-button" onclick="downloadFHIRJson()">下載 JSON</button>
+                </div>
+            </div>
+            <pre class="code-block fhir-json-preview" id="fhir-validator-json">${escapeHTML(json)}</pre>
+        </article>
+
+        <article class="card fhir-log-card">
+            <h3>同步紀錄</h3>
+            <div class="health-record-table-wrapper">
+                <table class="fhir-sync-log-table">
+                    <thead><tr><th>同步編號</th><th>Server</th><th>Patient ID</th><th>Observation 數</th><th>模式</th><th>狀態</th><th>時間</th></tr></thead>
+                    <tbody id="fhir-sync-log-body"></tbody>
+                </table>
+            </div>
+        </article>`;
+    renderHapiSyncSteps();
+    renderFhirSyncLogs();
+}
+
+function copyFHIRJson() {
+    const text = document.getElementById("fhir-validator-json")?.textContent || JSON.stringify(fhirBundleForValidation(), null, 2);
+    if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).then(() => showToast("FHIR JSON 已複製")).catch(() => showToast("瀏覽器限制剪貼簿，請手動複製"));
+    } else {
+        showToast("瀏覽器不支援剪貼簿 API");
+    }
+}
+
+function downloadFHIRJson() {
+    const text = JSON.stringify(fhirBundleForValidation(), null, 2);
+    const blob = new Blob([text], { type: "application/fhir+json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "fhir-bundle-demo.json";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+    showToast("FHIR JSON 已下載");
+}
+
+async function testHapiConnection() {
+    const input = document.getElementById("hapi-server-url");
+    const server = (input?.value || "https://hapi.fhir.org/baseR4").replace(/\/$/, "");
+    state.hapiServerUrl = server;
+    state.hapiStatusText = "Testing HAPI FHIR Server connection...";
+    state.hapiMode = "live";
+    renderFHIRValidation();
+    try {
+        const response = await fetch(`${server}/metadata`, { method: "GET", headers: { Accept: "application/fhir+json, application/json" } });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        state.hapiMode = "live";
+        state.hapiStatusText = "連線成功：已取得 CapabilityStatement。";
+    } catch (error) {
+        state.hapiMode = "mock";
+        state.hapiStatusText = `連線失敗，已切換為模擬模式：${error.message || "CORS or network blocked"}`;
+    }
+    saveState();
+    renderFHIRValidation();
+}
+
+async function uploadBundleToHapi() {
+    await simulateHapiUpload();
+}
+
+async function simulateHapiUpload() {
+    ensureFhirSyncLogs();
+    const steps = [
+        "驗證 FHIR Bundle",
+        "建立 Patient",
+        "建立 Observation",
+        "上傳到 HAPI FHIR Server",
+        "回傳 Resource ID",
+        "同步完成"
+    ];
+    state.hapiSyncSteps = steps.map((label) => ({ label, status: "pending" }));
+    state.hapiStatusText = "FHIR Bundle 同步流程執行中...";
+    saveState();
+    renderFHIRValidation();
+
+    for (let i = 0; i < steps.length; i += 1) {
+        state.hapiSyncSteps = state.hapiSyncSteps.map((step, index) => ({
+            ...step,
+            status: index < i ? "success" : index === i ? "processing" : "pending"
+        }));
+        saveState();
+        renderHapiSyncSteps();
+        await new Promise((resolve) => setTimeout(resolve, 350));
+    }
+
+    const validation = validateFHIRBundle();
+    const success = validation.errors === 0;
+    state.hapiSyncSteps = state.hapiSyncSteps.map((step) => ({ ...step, status: success ? "success" : "failed" }));
+    const bundle = validation.bundle;
+    const patient = (bundle.entry || []).map((entry) => entry.resource).find((resource) => resource?.resourceType === "Patient") || {};
+    const observationCount = (bundle.entry || []).filter((entry) => entry.resource?.resourceType === "Observation").length;
+    const mode = state.hapiMode === "live" ? "live" : "mock";
+    state.fhirSyncLogs.unshift({
+        id: `SYNC-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${String(state.fhirSyncLogs.length + 1).padStart(3, "0")}`,
+        server: state.hapiServerUrl || "https://hapi.fhir.org/baseR4",
+        bundleId: bundle.id || "bundle-demo-001",
+        patientId: patient.id || "patient-demo-001",
+        observationCount,
+        mode,
+        status: success ? "Success" : "Failed",
+        time: nowText()
+    });
+    state.hapiStatusText = success ? `同步完成，模式：${mode}，Patient ID：${patient.id || "patient-demo-001"}` : "驗證失敗，已停止同步。";
+    saveState();
+    renderFHIRValidation();
+}
+
+function renderHapiSyncSteps() {
+    const container = document.getElementById("hapi-sync-steps");
+    if (!container) return;
+    const steps = Array.isArray(state.hapiSyncSteps) && state.hapiSyncSteps.length
+        ? state.hapiSyncSteps
+        : [
+            { label: "驗證 FHIR Bundle", status: "pending" },
+            { label: "建立 Patient", status: "pending" },
+            { label: "建立 Observation", status: "pending" },
+            { label: "上傳到 HAPI FHIR Server", status: "pending" },
+            { label: "回傳 Resource ID", status: "pending" },
+            { label: "同步完成", status: "pending" }
+        ];
+    container.innerHTML = steps.map((step, index) => `
+        <div class="hapi-step ${escapeHTML(step.status)}">
+            <span class="hapi-step-index">${index + 1}</span>
+            <span class="hapi-step-label">${escapeHTML(step.label)}</span>
+            <span class="hapi-step-status">${escapeHTML(step.status)}</span>
+        </div>
+    `).join("");
+}
+
+function renderFhirSyncLogs() {
+    ensureFhirSyncLogs();
+    const body = document.getElementById("fhir-sync-log-body");
+    if (!body) return;
+    body.innerHTML = state.fhirSyncLogs.map((log) => `
+        <tr>
+            <td>${escapeHTML(log.id)}</td>
+            <td>${escapeHTML(log.server)}</td>
+            <td>${escapeHTML(log.patientId)}</td>
+            <td>${escapeHTML(String(log.observationCount))}</td>
+            <td><span class="hapi-mode-badge">${escapeHTML(log.mode)}</span></td>
+            <td><span class="fhir-status-badge ${String(log.status).toLowerCase() === "success" ? "valid" : "error"}">${escapeHTML(log.status)}</span></td>
+            <td>${escapeHTML(log.time)}</td>
+        </tr>
+    `).join("") || `<tr><td colspan="7" class="empty">尚無同步紀錄</td></tr>`;
+}
+
+function readHapiPatient() {
+    const bundle = fhirBundleForValidation();
+    const patient = (bundle.entry || []).map((entry) => entry.resource).find((resource) => resource?.resourceType === "Patient") || {};
+    state.hapiStatusText = `Read Patient 模擬結果：${patient.id || "patient-demo-001"} / ${patient.name?.[0]?.text || "Demo Patient"}`;
+    state.hapiMode = state.hapiMode || "mock";
+    saveState();
+    renderFHIRValidation();
+}
+
+function clearFhirSyncLogs() {
+    state.fhirSyncLogs = [];
+    state.hapiSyncSteps = [];
+    state.hapiStatusText = "同步紀錄已清除。";
+    saveState();
+    renderFHIRValidation();
+}
+
+function ensureFHIRValidatorUI() {
+    const role = getCurrentRole();
+    if (!["user", "admin"].includes(role)) return;
+    const pageContent = document.querySelector(".page-content");
+    if (!pageContent) return;
+    const navMenu = document.getElementById("nav-menu");
+    if (navMenu && !navMenu.querySelector('[data-section="fhir-validator-section"]')) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "nav-btn";
+        button.dataset.section = "fhir-validator-section";
+        button.textContent = "FHIR 驗證";
+        button.onclick = () => showSection("fhir-validator-section");
+        const before = navMenu.querySelector('[data-section="security-center-section"]') || navMenu.querySelector('[data-section="notification-section"]') || navMenu.querySelector('[data-section="system-setting-section"]');
+        navMenu.insertBefore(button, before || null);
+    }
+    if (!document.getElementById("fhir-validator-section")) {
+        const section = document.createElement("section");
+        section.id = "fhir-validator-section";
+        section.className = "content-section";
+        const before = document.getElementById("security-center-section") || document.getElementById("notification-section") || document.getElementById("system-setting-section");
+        pageContent.insertBefore(section, before || null);
+    }
+}
+
+var baseRenderAllBeforeFHIRValidator = renderAll;
+renderAll = function fhirValidatorRenderAll() {
+    ensureFHIRValidatorUI();
+    baseRenderAllBeforeFHIRValidator();
+    renderFHIRValidation();
+};
+
+window.generateFHIRBundle = generateFHIRBundle;
+window.validateFHIRBundle = validateFHIRBundle;
+window.renderFHIRValidation = renderFHIRValidation;
+window.copyFHIRJson = copyFHIRJson;
+window.downloadFHIRJson = downloadFHIRJson;
+window.testHapiConnection = testHapiConnection;
+window.uploadBundleToHapi = uploadBundleToHapi;
+window.simulateHapiUpload = simulateHapiUpload;
+window.renderHapiSyncSteps = renderHapiSyncSteps;
+window.renderFhirSyncLogs = renderFhirSyncLogs;
+window.readHapiPatient = readHapiPatient;
+window.clearFhirSyncLogs = clearFhirSyncLogs;
+window.renderAll = renderAll;
+
+// Smart notification rule engine.
+const SMART_NOTIFICATION_TYPES = ["all", "unread", "health", "ai", "fhir", "authorization", "registration", "system"];
+
+function notificationAccountId() {
+    return currentAccount()?.id || activeUserId?.() || "all";
+}
+
+function nextNotificationId() {
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const count = (state.notifications || []).filter((item) => String(item.id || "").includes(date)).length + 1;
+    return `NOTI-${date}-${String(count).padStart(3, "0")}`;
+}
+
+function normalizeNotification(item) {
+    const typeMap = { "health-warning": "health" };
+    return {
+        id: item.id || nextNotificationId(),
+        accountId: item.accountId || notificationAccountId(),
+        title: item.title || "系統通知",
+        message: item.message || "",
+        type: typeMap[item.type] || item.type || "system",
+        level: item.level || (item.type === "health-warning" ? "warning" : "info"),
+        read: Boolean(item.read ?? item.isRead ?? false),
+        relatedSection: item.relatedSection || "notification-section",
+        sourceId: item.sourceId || item.relatedRecordId || "",
+        createdAt: item.createdAt || item.time || nowText()
+    };
+}
+
+function ensureSmartNotifications() {
+    if (!Array.isArray(state.notifications)) state.notifications = [];
+    state.notifications = state.notifications.map(normalizeNotification);
+}
+
+function notificationsForCurrentAccountSmart() {
+    ensureSmartNotifications();
+    const accountId = notificationAccountId();
+    return state.notifications.filter((item) => item.accountId === "all" || item.accountId === accountId);
+}
+
+function addNotification(title, message, type = "system", level = "info", relatedSection = "notification-section", sourceId = "") {
+    ensureSmartNotifications();
+    let accountId = notificationAccountId();
+    if ((String(title).startsWith("ACC-") || title === "all") && arguments.length <= 3) {
+        accountId = title;
+        title = message;
+        message = type;
+        type = "system";
+        level = "info";
+        relatedSection = "notification-section";
+        sourceId = "";
+    }
+    const notification = normalizeNotification({ id: nextNotificationId(), accountId, title, message, type, level, relatedSection, sourceId, read: false, createdAt: nowText() });
+    if (notification.sourceId && state.notifications.some((item) => item.accountId === notification.accountId && item.sourceId === notification.sourceId && item.type === notification.type && item.title === notification.title)) {
+        return null;
+    }
+    state.notifications.unshift(notification);
+    saveState();
+    updateNotificationBadge();
+    return notification;
+}
+
+function weeklyExerciseMinutesFor(record) {
+    const accountId = record?.accountId || activeUserId();
+    return (state.healthRecords || [])
+        .filter((item) => item.accountId === accountId)
+        .slice(-7)
+        .reduce((sum, item) => sum + Number(item.exercise || item.exerciseDuration || 0), 0);
+}
+
+function evaluateHealthNotifications(latestData) {
+    if (!latestData) return;
+    const record = typeof normalizeHealthRecord === "function" ? normalizeHealthRecord(latestData) : latestData;
+    const source = record.id || `${record.accountId || activeUserId()}-${record.date || nowText()}`;
+    addNotification("健康資料已儲存", "健康資料已儲存，AI 分析已更新。", "health", "success", "ai-health-section", `${source}:health-saved`);
+    if (Number(record.systolic) >= 130 || Number(record.diastolic) >= 80) {
+        addNotification("血壓偏高提醒", "血壓偏高提醒：建議減少高鈉飲食並持續追蹤。", "health", "warning", "ai-health-section", `${source}:bp-warning`);
+    }
+    if (Number(record.systolic) >= 140 || Number(record.diastolic) >= 90) {
+        addNotification("高風險血壓提醒", "高風險血壓提醒：建議儘速諮詢醫療人員。", "health", "danger", "ai-health-section", `${source}:bp-danger`);
+    }
+    if (Number(record.bmi) < 18.5 || Number(record.bmi) > 24) {
+        addNotification("BMI 異常提醒", "BMI 異常提醒：請查看 AI 健康分析建議。", "health", "warning", "ai-health-section", `${source}:bmi`);
+    }
+    if (weeklyExerciseMinutesFor(record) < 150) {
+        addNotification("運動不足提醒", "本週運動時間不足，建議增加有氧運動。", "health", "warning", "training-advice-section", `${source}:exercise`);
+    }
+    if (Number(record.sleep) < 6) {
+        addNotification("睡眠不足提醒", "睡眠不足提醒：建議調整作息。", "health", "warning", "ai-health-section", `${source}:sleep`);
+    }
+}
+
+function evaluateAuthorizationNotifications() {
+    ensureSmartNotifications();
+    const now = Date.now();
+    (state.authorizations || []).forEach((auth) => {
+        const id = auth.id || auth.hash || `${auth.patientId}-${auth.targetRole}`;
+        if (auth.status && String(auth.status).includes("成功")) {
+            addNotification("授權成功", "已成功授權資料給教練 / 營養師。", "authorization", "success", "share-section", `${id}:auth-success`);
+        }
+        const expiry = Date.parse(auth.expiredAt || auth.expiresAt || auth.expireAt || "");
+        if (Number.isFinite(expiry) && expiry > now && expiry - now < 24 * 60 * 60 * 1000) {
+            addNotification("授權即將到期", "授權即將到期，請確認是否延長授權。", "authorization", "warning", "share-section", `${id}:auth-expiring`);
+        }
+    });
+}
+
+function notificationTypeLabel(type) {
+    return ({ health: "健康", ai: "AI", fhir: "FHIR", authorization: "授權", registration: "報名", system: "系統" })[type] || "系統";
+}
+
+function notificationIcon(item) {
+    if (item.level === "danger") return "!";
+    if (item.level === "warning") return "!";
+    if (item.level === "success") return "✓";
+    return "i";
+}
+
+function renderNotifications() {
+    ensureSmartNotifications();
+    evaluateAuthorizationNotifications();
+    const section = document.getElementById("notification-section");
+    const filter = state.notificationFilter || "all";
+    const all = notificationsForCurrentAccountSmart();
+    const filtered = all.filter((item) => {
+        if (filter === "all") return true;
+        if (filter === "unread") return !item.read;
+        return item.type === filter;
+    });
+    const stats = {
+        all: all.length,
+        unread: all.filter((item) => !item.read).length,
+        health: all.filter((item) => item.type === "health").length,
+        system: all.filter((item) => item.type === "system").length
+    };
+    const body = `
+        <h2 class="section-title">智慧通知中心</h2>
+        <div class="notification-stat-grid">
+            <article class="notification-stat-card"><span>全部通知</span><strong>${stats.all}</strong></article>
+            <article class="notification-stat-card"><span>未讀通知</span><strong>${stats.unread}</strong></article>
+            <article class="notification-stat-card"><span>健康警示</span><strong>${stats.health}</strong></article>
+            <article class="notification-stat-card"><span>系統通知</span><strong>${stats.system}</strong></article>
+        </div>
+        <div class="notification-toolbar card">
+            <div class="notification-filter-row">
+                ${SMART_NOTIFICATION_TYPES.map((typeName) => `<button type="button" class="notification-filter-btn ${filter === typeName ? "active" : ""}" onclick="filterNotifications('${typeName}')">${({ all: "全部", unread: "未讀", health: "健康", ai: "AI", fhir: "FHIR", authorization: "授權", registration: "報名", system: "系統" })[typeName]}</button>`).join("")}
+            </div>
+            <div class="notification-actions">
+                <button type="button" class="secondary-button" onclick="markAllNotificationsRead()">標記全部已讀</button>
+                <button type="button" class="secondary-button" onclick="clearReadNotifications()">清除已讀通知</button>
+                <button type="button" class="danger-button" onclick="clearAllNotifications()">清除全部通知</button>
+            </div>
+        </div>
+        <div class="notification-card-list">
+            ${filtered.map((item) => `
+                <article class="notification-card ${item.level} ${item.read ? "read" : "unread"}" onclick="markNotificationRead('${escapeHTML(item.id)}')">
+                    <span class="notification-card-icon ${item.level}">${notificationIcon(item)}</span>
+                    <div class="notification-card-main">
+                        <div class="notification-card-head">
+                            <h3>${escapeHTML(item.title)}</h3>
+                            <span class="notification-type-badge ${item.type}">${notificationTypeLabel(item.type)}</span>
+                        </div>
+                        <p>${escapeHTML(item.message)}</p>
+                        <div class="notification-meta">
+                            <span class="notification-level ${item.level}">${escapeHTML(item.level)}</span>
+                            <span>${escapeHTML(item.createdAt)}</span>
+                            <span>${item.read ? "已讀" : "未讀"}</span>
+                        </div>
+                    </div>
+                    <button type="button" class="secondary-button notification-related-btn" onclick="event.stopPropagation(); openNotificationRelated('${escapeHTML(item.id)}')">查看相關頁面</button>
+                </article>
+            `).join("") || `<div class="card empty">目前沒有符合條件的通知</div>`}
+        </div>`;
+    if (section) section.innerHTML = body;
+    setHTML("system-notification-list", filtered.map((item) => `<div class="timeline-item${item.read ? "" : " unread"}"><strong>${escapeHTML(item.title)}</strong><p>${escapeHTML(item.message)}</p><small class="muted">${escapeHTML(item.createdAt)}</small></div>`).join("") || `<div class="card empty">目前沒有通知</div>`);
+    updateNotificationBadge();
+}
+
+function filterNotifications(type) {
+    state.notificationFilter = SMART_NOTIFICATION_TYPES.includes(type) ? type : "all";
+    saveState();
+    renderNotifications();
+}
+
+function markNotificationRead(id) {
+    ensureSmartNotifications();
+    const item = state.notifications.find((notification) => notification.id === id);
+    if (item) item.read = true;
+    saveState();
+    renderNotifications();
+}
+
+function openNotificationRelated(id) {
+    ensureSmartNotifications();
+    const item = state.notifications.find((notification) => notification.id === id);
+    if (!item) return;
+    item.read = true;
+    saveState();
+    updateNotificationBadge();
+    if (item.relatedSection && document.getElementById(item.relatedSection)) showSection(item.relatedSection);
+    else renderNotifications();
+}
+
+function markAllNotificationsRead() {
+    notificationsForCurrentAccountSmart().forEach((item) => { item.read = true; });
+    saveState();
+    renderNotifications();
+}
+
+function clearReadNotifications() {
+    const accountId = notificationAccountId();
+    state.notifications = state.notifications.filter((item) => !(item.read && (item.accountId === "all" || item.accountId === accountId)));
+    saveState();
+    renderNotifications();
+}
+
+function clearAllNotifications() {
+    const accountId = notificationAccountId();
+    state.notifications = state.notifications.filter((item) => !(item.accountId === "all" || item.accountId === accountId));
+    saveState();
+    renderNotifications();
+}
+
+function updateNotificationBadge() {
+    const unread = notificationsForCurrentAccountSmart().filter((item) => !item.read).length;
+    ["nav-notif-count", "nav-notif-count-icon"].forEach((id) => {
+        const badge = document.getElementById(id);
+        if (!badge) return;
+        badge.textContent = unread > 0 ? String(unread) : "";
+        badge.classList.toggle("hidden", unread === 0);
+    });
+}
+
+var updateNotifBadgeBeforeSmartNotifications = typeof updateNotifBadge === "function" ? updateNotifBadge : null;
+updateNotifBadge = function smartUpdateNotifBadge() {
+    if (updateNotifBadgeBeforeSmartNotifications) updateNotifBadgeBeforeSmartNotifications();
+    updateNotificationBadge();
+};
+
+var baseSubmitHealthDataBeforeSmartNotifications = submitHealthData;
+submitHealthData = function smartNotificationSubmitHealthData(event) {
+    const before = state.healthRecords?.length || 0;
+    baseSubmitHealthDataBeforeSmartNotifications(event);
+    const latest = state.healthRecords?.[state.healthRecords.length - 1];
+    if ((state.healthRecords?.length || 0) > before && latest) evaluateHealthNotifications(latest);
+};
+
+if (typeof generateQRCode === "function") {
+    var baseGenerateQRCodeBeforeSmartNotifications = generateQRCode;
+    generateQRCode = function smartNotificationGenerateQRCode(event) {
+        const before = state.authorizations?.length || 0;
+        baseGenerateQRCodeBeforeSmartNotifications(event);
+        if ((state.authorizations?.length || 0) > before) {
+            const latest = state.authorizations[state.authorizations.length - 1];
+            addNotification("授權成功", "已成功授權資料給教練 / 營養師。", "authorization", "success", "share-section", `${latest?.id || latest?.hash || nowText()}:auth-success`);
+        }
+        evaluateAuthorizationNotifications();
+    };
+}
+
+if (typeof createAuthorization === "function") {
+    var baseCreateAuthorizationBeforeSmartNotifications = createAuthorization;
+    createAuthorization = function smartNotificationCreateAuthorization() {
+        const auth = baseCreateAuthorizationBeforeSmartNotifications();
+        if (auth) addNotification("授權成功", "已成功授權資料給教練 / 營養師。", "authorization", "success", "share-section", `${auth.id || auth.hash || nowText()}:auth-success`);
+        return auth;
+    };
+}
+
+if (typeof validateFHIRBundle === "function") {
+    var baseValidateFHIRBundleBeforeSmartNotifications = validateFHIRBundle;
+    validateFHIRBundle = function smartNotificationValidateFHIRBundle() {
+        const result = baseValidateFHIRBundleBeforeSmartNotifications();
+        if (result?.errors === 0) addNotification("FHIR Bundle 驗證成功", "FHIR Bundle 驗證成功。", "fhir", "success", "fhir-validator-section", `${result.bundle?.id || "bundle-demo-001"}:fhir-valid`);
+        return result;
+    };
+}
+
+if (typeof uploadBundleToHapi === "function") {
+    var baseUploadBundleToHapiBeforeSmartNotifications = uploadBundleToHapi;
+    uploadBundleToHapi = async function smartNotificationUploadBundleToHapi() {
+        await baseUploadBundleToHapiBeforeSmartNotifications();
+        addNotification("FHIR 同步成功", "FHIR 資料已同步至 HAPI FHIR Server 模擬環境。", "fhir", "success", "fhir-validator-section", `hapi-sync:${state.fhirSyncLogs?.[0]?.id || nowText()}`);
+    };
+}
+
+var baseUpdateRegistrationStatusBeforeSmartNotifications = updateRegistrationStatus;
+updateRegistrationStatus = function smartNotificationUpdateRegistrationStatus(id, status) {
+    baseUpdateRegistrationStatusBeforeSmartNotifications(id, status);
+    addNotification("競賽報名狀態已更新", "競賽報名狀態已更新。", "registration", "info", "my-registration-section", `${id}:${status}:registration-status`);
+};
+
+if (typeof importWearableData === "function") {
+    var baseImportWearableDataBeforeSmartNotifications = importWearableData;
+    importWearableData = function smartNotificationImportWearableData(source) {
+        const before = state.healthRecords?.length || 0;
+        baseImportWearableDataBeforeSmartNotifications(source);
+        const latest = state.healthRecords?.[state.healthRecords.length - 1];
+        if ((state.healthRecords?.length || 0) > before && latest) evaluateHealthNotifications(latest);
+    };
+}
+
+var baseLoginAccountBeforeSmartNotifications = loginAccount;
+loginAccount = function smartNotificationLoginAccount(event) {
+    const result = baseLoginAccountBeforeSmartNotifications(event);
+    addNotification("登入成功", "系統登入成功。", "system", "success", "notification-section", `login:${notificationAccountId()}:${new Date().toISOString().slice(0, 10)}`);
+    return result;
+};
+
+var baseLogoutAccountBeforeSmartNotifications = logoutAccount;
+logoutAccount = function smartNotificationLogoutAccount() {
+    addNotification("登出", "使用者已登出系統。", "system", "info", "notification-section", `logout:${notificationAccountId()}:${nowText()}`);
+    baseLogoutAccountBeforeSmartNotifications();
+};
+
+var baseRenderAllBeforeSmartNotifications = renderAll;
+renderAll = function smartNotificationRenderAll() {
+    ensureSmartNotifications();
+    baseRenderAllBeforeSmartNotifications();
+    renderNotifications();
+    updateNotificationBadge();
+};
+
+window.addNotification = addNotification;
+window.evaluateHealthNotifications = evaluateHealthNotifications;
+window.evaluateAuthorizationNotifications = evaluateAuthorizationNotifications;
+window.renderNotifications = renderNotifications;
+window.filterNotifications = filterNotifications;
+window.markNotificationRead = markNotificationRead;
+window.markAllNotificationsRead = markAllNotificationsRead;
+window.clearReadNotifications = clearReadNotifications;
+window.clearAllNotifications = clearAllNotifications;
+window.updateNotificationBadge = updateNotificationBadge;
+window.openNotificationRelated = openNotificationRelated;
+window.submitHealthData = submitHealthData;
+window.generateQRCode = generateQRCode;
+window.createAuthorization = createAuthorization;
+window.validateFHIRBundle = validateFHIRBundle;
+window.uploadBundleToHapi = uploadBundleToHapi;
+window.updateRegistrationStatus = updateRegistrationStatus;
+if (typeof importWearableData === "function") window.importWearableData = importWearableData;
+window.loginAccount = loginAccount;
+window.logoutAccount = logoutAccount;
+window.renderAll = renderAll;
+
+// AI health risk prediction.
+window.rolePermissions = {
+    ...(window.rolePermissions || {}),
+    user: Array.from(new Set([...(window.rolePermissions?.user || []), "ai-prediction-section"])),
+    coach: Array.from(new Set([...(window.rolePermissions?.coach || []), "ai-prediction-section"])),
+    nutritionist: Array.from(new Set([...(window.rolePermissions?.nutritionist || []), "ai-prediction-section"])),
+    admin: Array.from(new Set([...(window.rolePermissions?.admin || []), "ai-prediction-section"]))
+};
+
+if (typeof SECTION_LABELS === "object") SECTION_LABELS["ai-prediction-section"] = "AI 風險預測";
+
+var PREDICTION_METRIC_META = {
+    weight: { label: "體重", unit: "kg" },
+    bmi: { label: "BMI", unit: "" },
+    systolic: { label: "收縮壓", unit: "mmHg" },
+    heartRate: { label: "心率", unit: "bpm" },
+    exercise: { label: "運動時間", unit: "min/week" },
+    sleep: { label: "睡眠", unit: "hr" },
+    steps: { label: "步數", unit: "steps/day" },
+    score: { label: "健康分數", unit: "" }
+};
+
+function ensurePredictionScenario() {
+    state.predictionScenario = {
+        exercise: Number(state.predictionScenario?.exercise ?? 150),
+        sleep: Number(state.predictionScenario?.sleep ?? 7),
+        diet: state.predictionScenario?.diet || "balanced",
+        stress: Number(state.predictionScenario?.stress ?? 2)
+    };
+}
+
+function predictionRecordsForRole(role = getCurrentRole()) {
+    ensureHealthStore?.();
+    const records = (state.healthRecords || []).map((item) => (typeof normalizeHealthRecord === "function" ? normalizeHealthRecord(item) : item));
+    if (role === "user") return recordsByAccount(activeUserId()).map((item) => (typeof normalizeHealthRecord === "function" ? normalizeHealthRecord(item) : item));
+    if (role === "admin") return records.slice().sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+    const authIds = (state.authorizations || []).map((auth) => (typeof authPatientId === "function" ? authPatientId(auth) : auth.patientId)).filter(Boolean);
+    const scoped = records.filter((item) => authIds.includes(item.accountId));
+    if (scoped.length) return scoped.sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+    const fallbackUser = state.accounts?.find((item) => item.role === "user");
+    return records.filter((item) => item.accountId === fallbackUser?.id).sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+}
+
+function getPredictionDataByRole(role = getCurrentRole()) {
+    const common = { role, records: predictionRecordsForRole(role), isAdmin: role === "admin" };
+    if (role === "coach") return { ...common, title: "運動表現與訓練風險預測", visibleMetrics: ["heartRate", "exercise", "steps", "score"], focus: "coach" };
+    if (role === "nutritionist") return { ...common, title: "營養與代謝風險預測", visibleMetrics: ["weight", "bmi", "systolic", "score"], focus: "nutritionist" };
+    if (role === "admin") return { ...common, title: "匿名化健康風險統計摘要", visibleMetrics: ["bmi", "systolic", "exercise", "sleep", "score"], focus: "admin" };
+    return { ...common, title: "AI 健康風險預測", visibleMetrics: ["weight", "bmi", "systolic", "heartRate", "exercise", "sleep", "score"], focus: "user" };
+}
+
+function averagePrediction(records, getter) {
+    const values = records.map(getter).map(Number).filter(Number.isFinite);
+    if (!values.length) return 0;
+    return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function calculatePredictionTrend(records, key) {
+    const values = records.map((item) => Number(item[key])).filter(Number.isFinite);
+    if (values.length < 2) return { delta: 0, trend: "stable" };
+    const delta = values[values.length - 1] - values[0];
+    return { delta, trend: Math.abs(delta) < 0.1 ? "stable" : delta > 0 ? "up" : "down" };
+}
+
+function predictionScore({ bmi, systolic, diastolic, exercise, sleep, stress, diet }) {
+    let score = 100;
+    if (bmi < 18.5 || bmi > 24) score -= bmi > 27 || bmi < 17 ? 18 : 10;
+    if (systolic >= 140 || diastolic >= 90) score -= 22;
+    else if (systolic >= 130 || diastolic >= 80) score -= 12;
+    if (exercise < 150) score -= 12;
+    if (sleep < 6) score -= 12;
+    else if (sleep < 7) score -= 5;
+    if (stress >= 4) score -= 10;
+    if (diet === "poor") score -= 8;
+    if (diet === "balanced") score += 3;
+    return Math.max(0, Math.min(100, Math.round(score)));
+}
+
+function trendText(trend) {
+    if (trend === "up") return "↗";
+    if (trend === "down") return "↘";
+    return "→";
+}
+
+function runHealthPrediction() {
+    ensurePredictionScenario();
+    const roleData = getPredictionDataByRole(getCurrentRole());
+    const records = roleData.records.slice(-7);
+    if (records.length < 3) {
+        return {
+            insufficient: true,
+            currentScore: 0,
+            predictedScore: 0,
+            riskDirection: "資料不足",
+            summary: "目前資料不足，請至少新增 3 筆健康紀錄，系統才能產生較完整的 AI 預測。",
+            predictions: {},
+            risks: [],
+            roleData
+        };
+    }
+
+    const latest = records[records.length - 1];
+    const first = records[0];
+    const heightCm = Number(latest.height || state.patient?.height || 170);
+    const heightM = heightCm / 100;
+    const weightTrend = calculatePredictionTrend(records, "weight");
+    const weightShiftBase = weightTrend.trend === "down" ? -1 : weightTrend.trend === "up" ? 1 : 0;
+    const scenario = state.predictionScenario;
+    const exerciseAvg = averagePrediction(records, (item) => item.exercise || item.exerciseDuration || 0);
+    const exercisePredicted = Math.max(0, Number(scenario.exercise || exerciseAvg));
+    const sleepAvg = averagePrediction(records, (item) => item.sleep || 0);
+    const sleepPredicted = Math.max(0, Number(scenario.sleep || sleepAvg));
+    const dietShift = scenario.diet === "poor" ? 0.8 : scenario.diet === "balanced" ? -0.3 : -0.6;
+    const exerciseShift = exercisePredicted >= 150 ? -0.4 : 0.3;
+    const predictedWeight = Math.max(30, Number(latest.weight || averagePrediction(records, (item) => item.weight)) + weightShiftBase + dietShift + exerciseShift);
+    const currentBmi = Number(latest.bmi || (Number(latest.weight) / (heightM * heightM)));
+    const predictedBmi = predictedWeight / (heightM * heightM);
+    const highBpCount = records.filter((item) => Number(item.systolic) >= 130 || Number(item.diastolic) >= 80).length;
+    const exerciseTrend = calculatePredictionTrend(records, "exercise");
+    let predictedSystolic = Number(latest.systolic || averagePrediction(records, (item) => item.systolic));
+    if (highBpCount >= 3) predictedSystolic += 4;
+    if (exerciseTrend.trend === "up" || exercisePredicted >= 150) predictedSystolic -= 6;
+    if (Number(scenario.stress) >= 4) predictedSystolic += 4;
+    const predictedDiastolic = Number(latest.diastolic || averagePrediction(records, (item) => item.diastolic)) + (predictedSystolic - Number(latest.systolic || predictedSystolic)) * 0.45;
+    const currentHeart = Number(latest.heartRate || latest.hr || averagePrediction(records, (item) => item.heartRate || item.hr));
+    const predictedHeart = Math.max(45, currentHeart + (exercisePredicted >= 150 ? -3 : 2) + (Number(scenario.stress) >= 4 ? 3 : 0));
+    const currentSteps = Number(latest.steps || averagePrediction(records, (item) => item.steps));
+    const predictedSteps = Math.max(0, currentSteps + (exercisePredicted >= 150 ? 1200 : -300));
+    const currentScore = predictionScore({
+        bmi: currentBmi,
+        systolic: Number(latest.systolic),
+        diastolic: Number(latest.diastolic),
+        exercise: exerciseAvg,
+        sleep: sleepAvg,
+        stress: Number(latest.stress || 2),
+        diet: "balanced"
+    });
+    const predictedScore = predictionScore({
+        bmi: predictedBmi,
+        systolic: predictedSystolic,
+        diastolic: predictedDiastolic,
+        exercise: exercisePredicted,
+        sleep: sleepPredicted,
+        stress: Number(scenario.stress),
+        diet: scenario.diet
+    });
+    const scoreDelta = predictedScore - currentScore;
+    const riskDirection = scoreDelta >= 4 ? "改善中" : scoreDelta <= -4 ? "風險上升" : "穩定";
+    const risks = [];
+    if (exercisePredicted < 150) risks.push({ title: "運動不足風險", level: "medium", suggestion: "建議每週增加 30 分鐘有氧運動。", action: "安排 3 次 10 分鐘快走或飛輪訓練。" });
+    if (sleepPredicted < 6) risks.push({ title: "睡眠不足風險", level: "medium", suggestion: "建議調整作息並固定睡眠時間。", action: "睡前 30 分鐘降低螢幕使用與咖啡因攝取。" });
+    if (predictedSystolic >= 140 || predictedDiastolic >= 90) risks.push({ title: "高血壓風險", level: "high", suggestion: "建議儘速諮詢醫療人員並持續監測。", action: "每日固定量測血壓並記錄飲食鈉含量。" });
+    else if (predictedSystolic >= 130 || predictedDiastolic >= 80) risks.push({ title: "血壓偏高風險", level: "medium", suggestion: "建議減少高鈉飲食並提升有氧運動。", action: "每週至少 150 分鐘中等強度活動。" });
+    if (predictedBmi < 18.5 || predictedBmi > 24) risks.push({ title: "BMI 異常風險", level: predictedBmi > 27 || predictedBmi < 17 ? "high" : "medium", suggestion: "建議查看 AI 健康分析並調整飲食與運動。", action: "建立每週體重與飲食追蹤目標。" });
+    if (!risks.length) risks.push({ title: "短期風險穩定", level: "low", suggestion: "維持目前生活型態並每週追蹤趨勢。", action: "持續記錄體重、血壓、睡眠與運動。" });
+
+    return {
+        currentScore,
+        predictedScore,
+        riskDirection,
+        summary: `依照最近 ${records.length} 筆資料，若維持目前情境設定，預估 30 天後健康分數${riskDirection === "改善中" ? "提升" : riskDirection === "風險上升" ? "下降" : "大致穩定"}。`,
+        predictions: {
+            weight: { current: Number(latest.weight || 0), predicted: Number(predictedWeight.toFixed(1)), unit: "kg", trend: predictedWeight < Number(latest.weight) ? "down" : predictedWeight > Number(latest.weight) ? "up" : "stable" },
+            bmi: { current: Number(currentBmi.toFixed(1)), predicted: Number(predictedBmi.toFixed(1)), unit: "", trend: predictedBmi < currentBmi ? "down" : predictedBmi > currentBmi ? "up" : "stable" },
+            systolic: { current: Number(latest.systolic || 0), predicted: Math.round(predictedSystolic), unit: "mmHg", trend: predictedSystolic < Number(latest.systolic) ? "down" : predictedSystolic > Number(latest.systolic) ? "up" : "stable" },
+            heartRate: { current: Math.round(currentHeart), predicted: Math.round(predictedHeart), unit: "bpm", trend: predictedHeart < currentHeart ? "down" : predictedHeart > currentHeart ? "up" : "stable" },
+            exercise: { current: Math.round(exerciseAvg), predicted: Math.round(exercisePredicted), unit: "min/week", trend: exercisePredicted > exerciseAvg ? "up" : exercisePredicted < exerciseAvg ? "down" : "stable" },
+            sleep: { current: Number(sleepAvg.toFixed(1)), predicted: Number(sleepPredicted.toFixed(1)), unit: "hr", trend: sleepPredicted > sleepAvg ? "up" : sleepPredicted < sleepAvg ? "down" : "stable" },
+            steps: { current: Math.round(currentSteps), predicted: Math.round(predictedSteps), unit: "steps/day", trend: predictedSteps > currentSteps ? "up" : predictedSteps < currentSteps ? "down" : "stable" },
+            score: { current: currentScore, predicted: predictedScore, unit: "", trend: predictedScore > currentScore ? "up" : predictedScore < currentScore ? "down" : "stable" }
+        },
+        risks,
+        roleData,
+        records,
+        latest,
+        first
+    };
+}
+
+function predictionChangePercent(item) {
+    const current = Number(item.current);
+    const predicted = Number(item.predicted);
+    if (!Number.isFinite(current) || current === 0) return "0%";
+    return `${(((predicted - current) / Math.abs(current)) * 100).toFixed(1)}%`;
+}
+
+function ensureAIPredictionUI() {
+    const role = getCurrentRole();
+    if (!["user", "coach", "nutritionist", "admin"].includes(role)) return;
+    const pageContent = document.querySelector(".page-content");
+    if (!pageContent) return;
+    const navMenu = document.getElementById("nav-menu");
+    if (navMenu && !navMenu.querySelector('[data-section="ai-prediction-section"]')) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "nav-btn";
+        button.dataset.section = "ai-prediction-section";
+        button.textContent = "AI 風險預測";
+        button.onclick = () => showSection("ai-prediction-section");
+        const before = navMenu.querySelector('[data-section="ai-health-section"]') || navMenu.querySelector('[data-section="fhir-validator-section"]') || navMenu.querySelector('[data-section="notification-section"]');
+        navMenu.insertBefore(button, before || null);
+    }
+    if (!document.getElementById("ai-prediction-section")) {
+        const section = document.createElement("section");
+        section.id = "ai-prediction-section";
+        section.className = "content-section";
+        const before = document.getElementById("ai-health-section") || document.getElementById("fhir-validator-section") || document.getElementById("notification-section");
+        pageContent.insertBefore(section, before || null);
+    }
+}
+
+function renderHealthPrediction() {
+    ensureAIPredictionUI();
+    const section = document.getElementById("ai-prediction-section");
+    if (!section) return;
+    const result = runHealthPrediction();
+    const roleData = result.roleData || getPredictionDataByRole(getCurrentRole());
+    if (result.insufficient) {
+        section.innerHTML = `
+            <div class="section-heading"><h2>${escapeHTML(roleData.title)}</h2><p>使用 localStorage 健康紀錄模擬未來 30 天健康趨勢。</p></div>
+            <article class="card prediction-empty-state">
+                <h3>目前資料不足</h3>
+                <p>目前資料不足，請至少新增 3 筆健康紀錄，系統才能產生較完整的 AI 預測。</p>
+                <button type="button" class="primary-button" onclick="showSection('health-input-section')">新增健康資料</button>
+            </article>`;
+        return;
+    }
+    const metrics = roleData.visibleMetrics.filter((key) => result.predictions[key]);
+    const adminNote = roleData.isAdmin ? `<article class="card prediction-admin-note"><h3>匿名化統計摘要</h3><p>目前以 ${roleData.records.length} 筆健康紀錄進行匿名化彙整，僅顯示群體趨勢，不顯示個人明細。</p></article>` : "";
+    section.innerHTML = `
+        <div class="section-heading"><h2>${escapeHTML(roleData.title)}</h2><p>根據最近健康資料，以 JavaScript 規則引擎模擬未來 30 天健康風險與趨勢。</p></div>
+        ${adminNote}
+        <div class="prediction-overview">
+            <article class="prediction-score-card"><span>目前健康分數</span><strong>${result.currentScore}</strong><small>Current Score</small></article>
+            <article class="prediction-score-card predicted"><span>30 天後預測分數</span><strong>${result.predictedScore}</strong><small>Predicted Score</small></article>
+            <article class="card prediction-direction-card"><span>趨勢方向</span><strong class="${result.riskDirection === "改善中" ? "prediction-trend-up" : result.riskDirection === "風險上升" ? "prediction-trend-down" : "prediction-trend-stable"}">${escapeHTML(result.riskDirection)}</strong><p>${escapeHTML(result.summary)}</p></article>
+        </div>
+        <div class="prediction-grid">
+            ${metrics.map((key) => {
+                const item = result.predictions[key];
+                const meta = PREDICTION_METRIC_META[key] || { label: key, unit: item.unit || "" };
+                return `<article class="prediction-card ${item.trend}">
+                    <div class="prediction-card-head"><span>${escapeHTML(meta.label)}</span><strong class="prediction-trend-${item.trend}">${trendText(item.trend)}</strong></div>
+                    <div class="prediction-values"><div><small>目前</small><b>${escapeHTML(String(item.current))}</b></div><div><small>30 天後</small><b>${escapeHTML(String(item.predicted))}</b></div></div>
+                    <p>${escapeHTML(item.unit || meta.unit || "")}</p>
+                    <small class="prediction-change">變化 ${predictionChangePercent(item)}</small>
+                </article>`;
+            }).join("")}
+        </div>
+        <article class="card prediction-chart-card">
+            <div class="fhir-card-title-row"><h3>30 天預測圖表</h3><span class="hapi-mode-badge">Rule-based AI</span></div>
+            <div class="prediction-chart-wrap"><canvas id="prediction-chart" height="280" role="img" aria-label="30 天健康風險預測圖表"></canvas></div>
+        </article>
+        <div class="prediction-bottom-grid">
+            <article class="card prediction-risk-list">
+                <h3>風險清單與 AI 建議</h3>
+                ${result.risks.map((risk) => `<div class="prediction-risk-item ${escapeHTML(risk.level)}"><div><strong>${escapeHTML(risk.title)}</strong><span>${escapeHTML(risk.level)}</span></div><p>${escapeHTML(risk.suggestion)}</p><small>改善行動：${escapeHTML(risk.action || "持續追蹤並調整生活習慣。")}</small></div>`).join("")}
+            </article>
+            ${roleData.isAdmin ? "" : predictionScenarioHTML()}
+        </div>
+        <article class="card prediction-fhir-card">
+            <h3>FHIR 整合說明</h3>
+            <p>本預測基於 FHIR Observation 中的：</p>
+            <ul><li>Body Weight</li><li>BMI</li><li>Blood Pressure</li><li>Heart Rate</li><li>Exercise Duration</li><li>Sleep Duration</li></ul>
+        </article>`;
+    renderPredictionChart(result);
+}
+
+function predictionScenarioHTML() {
+    ensurePredictionScenario();
+    const scenario = state.predictionScenario;
+    return `<article class="card prediction-scenario-card">
+        <h3>情境模擬器</h3>
+        <div class="form-group"><label for="prediction-exercise">每週運動時間</label><input id="prediction-exercise" type="number" min="0" max="600" value="${escapeHTML(String(scenario.exercise))}" /></div>
+        <div class="form-group"><label for="prediction-sleep">睡眠時數</label><input id="prediction-sleep" type="number" min="0" max="12" step="0.1" value="${escapeHTML(String(scenario.sleep))}" /></div>
+        <div class="form-group"><label for="prediction-diet">飲食狀態</label><select id="prediction-diet"><option value="balanced" ${scenario.diet === "balanced" ? "selected" : ""}>均衡</option><option value="good" ${scenario.diet === "good" ? "selected" : ""}>改善中</option><option value="poor" ${scenario.diet === "poor" ? "selected" : ""}>高油高鈉</option></select></div>
+        <div class="form-group"><label for="prediction-stress">壓力程度</label><input id="prediction-stress" type="range" min="1" max="5" value="${escapeHTML(String(scenario.stress))}" /></div>
+        <button type="button" class="primary-button" onclick="updatePredictionScenario()">重新預測</button>
+    </article>`;
+}
+
+function renderPredictionChart(prediction = runHealthPrediction()) {
+    if (prediction.insufficient || typeof Chart === "undefined") return;
+    const canvas = document.getElementById("prediction-chart");
+    if (!canvas) return;
+    const days = [0, 5, 10, 15, 20, 25, 30];
+    const interpolate = (current, predicted) => days.map((day) => Number((Number(current) + (Number(predicted) - Number(current)) * (day / 30)).toFixed(1)));
+    if (typeof destroyChart === "function") destroyChart("prediction-chart");
+    _charts["prediction-chart"] = new Chart(canvas, {
+        type: "line",
+        data: {
+            labels: days.map((day) => `${day}天`),
+            datasets: [
+                { label: "健康分數", data: interpolate(prediction.currentScore, prediction.predictedScore), borderColor: "#0f766e", backgroundColor: "rgba(15,118,110,0.12)", tension: 0.35 },
+                { label: "BMI", data: interpolate(prediction.predictions.bmi?.current || 0, prediction.predictions.bmi?.predicted || 0), borderColor: "#f59e0b", backgroundColor: "rgba(245,158,11,0.12)", tension: 0.35 },
+                { label: "血壓", data: interpolate(prediction.predictions.systolic?.current || 0, prediction.predictions.systolic?.predicted || 0), borderColor: "#dc2626", backgroundColor: "rgba(220,38,38,0.1)", tension: 0.35 },
+                { label: "運動時間", data: interpolate(prediction.predictions.exercise?.current || 0, prediction.predictions.exercise?.predicted || 0), borderColor: "#2563eb", backgroundColor: "rgba(37,99,235,0.12)", tension: 0.35 }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: "bottom" } },
+            scales: { y: { beginAtZero: false, grid: { color: "rgba(148,163,184,0.25)" } }, x: { grid: { display: false } } }
+        }
+    });
+}
+
+function updatePredictionScenario() {
+    ensurePredictionScenario();
+    state.predictionScenario = {
+        exercise: Number(document.getElementById("prediction-exercise")?.value || state.predictionScenario.exercise),
+        sleep: Number(document.getElementById("prediction-sleep")?.value || state.predictionScenario.sleep),
+        diet: document.getElementById("prediction-diet")?.value || state.predictionScenario.diet,
+        stress: Number(document.getElementById("prediction-stress")?.value || state.predictionScenario.stress)
+    };
+    saveState();
+    renderHealthPrediction();
+    if (typeof addNotification === "function") addNotification("AI 風險預測已更新", "情境模擬器已重新計算 30 天健康風險。", "ai", "info", "ai-prediction-section", `prediction:${nowText()}`);
+}
+
+var baseRenderAllBeforePrediction = renderAll;
+renderAll = function predictionRenderAll() {
+    ensureAIPredictionUI();
+    baseRenderAllBeforePrediction();
+    renderHealthPrediction();
+};
+
+window.runHealthPrediction = runHealthPrediction;
+window.renderHealthPrediction = renderHealthPrediction;
+window.renderPredictionChart = renderPredictionChart;
+window.updatePredictionScenario = updatePredictionScenario;
+window.calculatePredictionTrend = calculatePredictionTrend;
+window.getPredictionDataByRole = getPredictionDataByRole;
+window.renderAll = renderAll;
+
+// Health report download and print.
+if (typeof SECTION_LABELS === "object") SECTION_LABELS["health-report-section"] = "健康報告下載";
+
+function reportValue(value, fallback = "--") {
+    if (value === undefined || value === null || value === "") return fallback;
+    return String(value);
+}
+
+function reportMetric(label, value, unit = "") {
+    return `<article class="report-metric-card"><span>${escapeHTML(label)}</span><strong>${escapeHTML(reportValue(value))}</strong><small>${escapeHTML(unit)}</small></article>`;
+}
+
+function reportTableRow(label, value) {
+    return `<tr><th>${escapeHTML(label)}</th><td>${escapeHTML(reportValue(value))}</td></tr>`;
+}
+
+function getReportData() {
+    ensureHealthStore?.();
+    const account = currentAccount?.() || state.accounts?.find((item) => item.id === activeUserId()) || {};
+    const records = recordsByAccount(activeUserId()).map((item) => (typeof normalizeHealthRecord === "function" ? normalizeHealthRecord(item) : item));
+    const latest = records[records.length - 1] || null;
+    const analysis = typeof runAIAnalysis === "function" ? runAIAnalysis(activeUserId()) : {};
+    const fhir = typeof generateFHIRBundle === "function" ? generateFHIRBundle(activeUserId()) : { resourceType: "Bundle", entry: [] };
+    let fhirValidation = { status: "Not checked", passed: 0, warnings: 0, errors: 0 };
+    try {
+        if (typeof validateFHIRBundle === "function") {
+            const result = validateFHIRBundle();
+            fhirValidation = { status: result.status, passed: result.passed, warnings: result.warnings, errors: result.errors };
+        }
+    } catch (error) {
+        fhirValidation = { status: "Unavailable", passed: 0, warnings: 0, errors: 0 };
+    }
+    const auths = (state.authorizations || []).filter((auth) => {
+        const patientId = typeof authPatientId === "function" ? authPatientId(auth) : auth.patientId;
+        return patientId === activeUserId() || auth.patientId === activeUserId();
+    });
+    const observationCount = (fhir.entry || []).filter((entry) => entry.resource?.resourceType === "Observation").length;
+    return {
+        account,
+        records,
+        latest,
+        analysis,
+        fhir,
+        fhirValidation,
+        auths,
+        generatedAt: nowText(),
+        score: analysis.score ?? "--",
+        riskLevel: analysis.riskLevel || analysis.risk || "--",
+        observationCount
+    };
+}
+
+function generateHealthReport() {
+    const data = getReportData();
+    state.generatedHealthReport = {
+        generatedAt: data.generatedAt,
+        score: data.score,
+        riskLevel: data.riskLevel,
+        recordCount: data.records.length
+    };
+    saveState();
+    renderHealthReport();
+    showToast("健康報告已產生");
+    return data;
+}
+
+function ensureHealthReportDownloadSection() {
+    const pageContent = document.querySelector(".page-content");
+    if (!pageContent) return null;
+    let section = document.getElementById("health-report-section");
+    if (!section) {
+        section = document.createElement("section");
+        section.id = "health-report-section";
+        section.className = "content-section";
+        const before = document.getElementById("fhir-viewer-section") || document.getElementById("ai-prediction-section") || document.getElementById("notification-section");
+        pageContent.insertBefore(section, before || null);
+    }
+    const navMenu = document.getElementById("nav-menu");
+    if (navMenu && !navMenu.querySelector('[data-section="health-report-section"]')) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "nav-btn";
+        button.dataset.section = "health-report-section";
+        button.textContent = "健康報告下載";
+        button.onclick = () => showSection("health-report-section");
+        const before = navMenu.querySelector('[data-section="ai-prediction-section"]') || navMenu.querySelector('[data-section="fhir-validator-section"]') || navMenu.querySelector('[data-section="notification-section"]');
+        navMenu.insertBefore(button, before || null);
+    }
+    return section;
+}
+
+function renderHealthReport() {
+    const section = ensureHealthReportDownloadSection();
+    if (!section) return;
+    const data = getReportData();
+    if (!data.latest) {
+        section.innerHTML = `
+            <div class="section-heading report-no-print"><h2>健康報告下載</h2><p>產生可列印與可另存 PDF 的個人健康報告。</p></div>
+            <article class="card report-section report-empty-state">
+                <h3>尚無健康資料</h3>
+                <p>尚無健康資料，請先新增健康紀錄後再產生報告。</p>
+                <button type="button" class="primary-button" onclick="showSection('health-input-section')">新增健康資料</button>
+            </article>`;
+        return;
+    }
+    const account = data.account;
+    const patient = state.patient || {};
+    const latest = data.latest;
+    const analysis = data.analysis;
+    const fhir = data.fhir;
+    const patientResource = (fhir.entry || []).map((entry) => entry.resource).find((resource) => resource?.resourceType === "Patient");
+    const authRows = data.auths.map((auth) => `
+        <tr>
+            <td>${escapeHTML(auth.targetName || auth.targetRole || "--")}</td>
+            <td>${escapeHTML(Array.isArray(auth.dataScopes) ? auth.dataScopes.join("、") : auth.dataScopes || "--")}</td>
+            <td>${escapeHTML(auth.expiredAt || auth.duration || "--")}</td>
+            <td>${escapeHTML(auth.hash || "--")}</td>
+        </tr>`).join("") || `<tr><td colspan="4">尚無授權紀錄。</td></tr>`;
+    const riskTags = Array.isArray(analysis.riskTags) ? analysis.riskTags : [];
+    section.innerHTML = `
+        <div class="section-heading report-no-print"><h2>健康報告下載</h2><p>產生、列印、另存 PDF，或複製 AI 健康摘要。</p></div>
+        <div class="report-toolbar report-no-print">
+            <button type="button" class="primary-button" onclick="generateHealthReport()">產生健康報告</button>
+            <button type="button" class="secondary-button" onclick="printHealthReport()">列印報告</button>
+            <button type="button" class="secondary-button" onclick="downloadHealthReportPDF()">下載 PDF</button>
+            <button type="button" class="secondary-button" onclick="copyHealthReportSummary()">複製報告摘要</button>
+        </div>
+        <div id="health-report-print-area" class="health-report-document">
+            <header class="report-cover">
+                <div>
+                    <span>AI Health Report</span>
+                    <h1>AI 健康追蹤與運動管理平台</h1>
+                    <p>使用者姓名：${escapeHTML(account.name || patient.name || "--")}</p>
+                    <p>報告產生時間：${escapeHTML(data.generatedAt)}</p>
+                </div>
+                <div class="report-cover-score">
+                    <span>健康分數</span>
+                    <strong>${escapeHTML(String(data.score))}</strong>
+                    <small>風險等級：${escapeHTML(data.riskLevel)}</small>
+                </div>
+            </header>
+
+            <section class="report-section">
+                <h2>個人資料</h2>
+                <div class="report-grid">
+                    ${reportMetric("姓名", account.name || patient.name)}
+                    ${reportMetric("性別", patient.gender || patientResource?.gender)}
+                    ${reportMetric("生日", patient.birthday || patient.birthDate || patientResource?.birthDate)}
+                    ${reportMetric("身高", latest.height || patient.height || getUserHeight?.(), "cm")}
+                    ${reportMetric("目標體重", patient.targetWeight, "kg")}
+                </div>
+            </section>
+
+            <section class="report-section">
+                <h2>最新健康資料</h2>
+                <div class="report-grid">
+                    ${reportMetric("血壓", `${latest.systolic}/${latest.diastolic}`, "mmHg")}
+                    ${reportMetric("體重", latest.weight, "kg")}
+                    ${reportMetric("BMI", latest.bmi)}
+                    ${reportMetric("心率", latest.heartRate || latest.hr, "bpm")}
+                    ${reportMetric("步數", Number(latest.steps || 0).toLocaleString(), "steps")}
+                    ${reportMetric("運動時間", latest.exercise || latest.exerciseDuration, "min")}
+                    ${reportMetric("睡眠", latest.sleep, "hr")}
+                    ${reportMetric("飲水量", latest.water, "ml")}
+                    ${reportMetric("壓力程度", latest.stress, "/5")}
+                </div>
+            </section>
+
+            <section class="report-section">
+                <h2>AI 健康分析</h2>
+                <table class="report-table"><tbody>
+                    ${reportTableRow("健康分數", `${data.score}/100`)}
+                    ${reportTableRow("風險標籤", riskTags.length ? riskTags.join("、") : "目前無明顯風險")}
+                    ${reportTableRow("AI 摘要", analysis.summary)}
+                    ${reportTableRow("飲食建議", analysis.dietAdvice)}
+                    ${reportTableRow("運動建議", analysis.exerciseAdvice)}
+                    ${reportTableRow("睡眠建議", analysis.sleepAdvice)}
+                    ${reportTableRow("就醫提醒", analysis.medicalAdvice)}
+                    ${reportTableRow("生活習慣建議", analysis.lifestyleAdvice)}
+                </tbody></table>
+            </section>
+
+            <section class="report-section">
+                <h2>FHIR 摘要</h2>
+                <div class="report-grid">
+                    ${reportMetric("Patient", patientResource?.id || account.id)}
+                    ${reportMetric("Observation 數量", data.observationCount)}
+                    ${reportMetric("Bundle 狀態", fhir.resourceType === "Bundle" ? "Bundle / " + (fhir.type || "--") : "Unavailable")}
+                    ${reportMetric("FHIR 驗證結果", `${data.fhirValidation.status} (${data.fhirValidation.errors} errors)`)}
+                </div>
+            </section>
+
+            <section class="report-section">
+                <h2>授權紀錄</h2>
+                <div class="health-record-table-wrapper">
+                    <table class="report-table">
+                        <thead><tr><th>授權對象</th><th>授權範圍</th><th>授權期限</th><th>Hash</th></tr></thead>
+                        <tbody>${authRows}</tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section class="report-disclaimer">
+                <h2>報告聲明</h2>
+                <p>本報告為健康管理與競賽展示用途，非正式醫療診斷。如有身體不適，請諮詢專業醫療人員。</p>
+            </section>
+        </div>`;
+}
+
+function printHealthReport() {
+    renderHealthReport();
+    setTimeout(() => window.print(), 100);
+}
+
+function downloadHealthReportPDF() {
+    renderHealthReport();
+    showToast("請在列印視窗選擇「另存為 PDF」。");
+    setTimeout(() => window.print(), 120);
+}
+
+function copyHealthReportSummary() {
+    const data = getReportData();
+    if (!data.latest) {
+        showToast("尚無健康資料可複製");
+        return;
+    }
+    const latest = data.latest;
+    const text = [
+        `AI 健康報告摘要`,
+        `使用者：${data.account.name || state.patient?.name || "--"}`,
+        `產生時間：${data.generatedAt}`,
+        `健康分數：${data.score}`,
+        `風險等級：${data.riskLevel}`,
+        `血壓：${latest.systolic}/${latest.diastolic} mmHg`,
+        `體重：${latest.weight} kg`,
+        `BMI：${latest.bmi}`,
+        `心率：${latest.heartRate || latest.hr} bpm`,
+        `步數：${latest.steps}`,
+        `AI 摘要：${data.analysis.summary || "--"}`
+    ].join("\n");
+    if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).then(() => showToast("報告摘要已複製")).catch(() => showToast("瀏覽器限制剪貼簿，請手動複製"));
+    } else {
+        showToast("瀏覽器不支援剪貼簿 API");
+    }
+}
+
+var baseRenderAllBeforeReportDownload = renderAll;
+renderAll = function healthReportDownloadRenderAll() {
+    ensureHealthReportDownloadSection();
+    baseRenderAllBeforeReportDownload();
+    renderHealthReport();
+};
+
+window.getReportData = getReportData;
+window.generateHealthReport = generateHealthReport;
+window.renderHealthReport = renderHealthReport;
+window.printHealthReport = printHealthReport;
+window.downloadHealthReportPDF = downloadHealthReportPDF;
+window.copyHealthReportSummary = copyHealthReportSummary;
+window.renderAll = renderAll;
+
+// AI Health Assistant.
+const AI_ASSISTANT_QUICK_QUESTIONS = [
+    "我的 BMI 正常嗎？",
+    "今天血壓正常嗎？",
+    "我運動量夠嗎？",
+    "幫我解讀 AI 分析",
+    "FHIR 是什麼？",
+    "Observation 是什麼？",
+    "教練可以看到什麼資料？",
+    "營養師可以看到什麼資料？",
+    "我可以怎麼改善健康？"
+];
+
+function ensureAssistantMessages() {
+    if (!Array.isArray(state.assistantMessages)) state.assistantMessages = [];
+}
+
+function assistantTime() {
+    const now = new Date();
+    return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+}
+
+function getLatestHealthDataForAssistant() {
+    const accountId = typeof activeUserId === "function" ? activeUserId() : currentAccount()?.id;
+    let records = [];
+    if (typeof recordsByAccount === "function" && accountId) records = recordsByAccount(accountId);
+    if (!records.length) records = state.history || state.healthRecords || [];
+    return records.map((item) => (typeof normalizeHealthRecord === "function" ? normalizeHealthRecord(item) : item)).filter(Boolean).slice(-1)[0] || null;
+}
+
+function getBMIStatus(bmiValue) {
+    const bmi = Number(bmiValue ?? getLatestHealthDataForAssistant()?.bmi);
+    if (!Number.isFinite(bmi)) return "無資料";
+    if (bmi < 18.5) return "過輕";
+    if (bmi < 24) return "正常";
+    if (bmi < 27) return "過重";
+    return "肥胖";
+}
+
+function getBloodPressureStatus(record = getLatestHealthDataForAssistant()) {
+    if (!record) return "無資料";
+    const systolic = Number(record.systolic);
+    const diastolic = Number(record.diastolic);
+    if (systolic >= 140 || diastolic >= 90) return "高風險";
+    if (systolic >= 130 || diastolic >= 80) return "偏高";
+    return "正常";
+}
+
+function getExerciseStatus() {
+    const accountId = typeof activeUserId === "function" ? activeUserId() : currentAccount()?.id;
+    let records = [];
+    if (typeof recordsByAccount === "function" && accountId) records = recordsByAccount(accountId);
+    if (!records.length) records = state.history || state.healthRecords || [];
+    const weekly = records.slice(-7).reduce((sum, item) => sum + Number(item.exercise || item.exerciseDuration || 0), 0);
+    return { weekly, status: weekly >= 150 ? "達標" : "未達標" };
+}
+
+function assistantNoHealthDataText() {
+    return "目前尚無健康紀錄，請先新增健康資料後，我才能幫你分析。";
+}
+
+function generateAssistantReply(question) {
+    const q = String(question || "").toLowerCase();
+    const latest = getLatestHealthDataForAssistant();
+    const hasHealthIntent = /bmi|血壓|運動|健康|分析|改善|睡眠|心率|體重/.test(q);
+    if (!latest && hasHealthIntent) return assistantNoHealthDataText();
+
+    if (q.includes("bmi")) {
+        const bmi = Number(latest.bmi || 0).toFixed(1);
+        return `你的最新 BMI 是 ${bmi}。\n狀態為：${getBMIStatus(bmi)}。\nBMI 來源為：體重 + 身高資料。`;
+    }
+
+    if (q.includes("血壓")) {
+        const status = getBloodPressureStatus(latest);
+        const advice = status === "正常"
+            ? "建議維持目前飲食、運動與睡眠習慣。"
+            : status === "偏高"
+                ? "建議減少高鈉飲食、規律有氧運動並持續追蹤。"
+                : "建議儘速諮詢醫療人員，並每日固定量測血壓。";
+        return `你的最新血壓為 ${latest.systolic} / ${latest.diastolic} mmHg。\n狀態為：${status}。\n建議：${advice}`;
+    }
+
+    if (q.includes("運動") || q.includes("運動量")) {
+        const exercise = getExerciseStatus();
+        return `你最近一週運動時間為 ${exercise.weekly} 分鐘。\n建議目標為每週 150 分鐘。\n目前狀態為：${exercise.status}。`;
+    }
+
+    if (q.includes("ai") || q.includes("分析") || q.includes("解讀")) {
+        const analysis = typeof runAIAnalysis === "function" ? runAIAnalysis(typeof activeUserId === "function" ? activeUserId() : undefined) : {};
+        const risks = Array.isArray(analysis.riskTags) && analysis.riskTags.length ? analysis.riskTags.join("、") : "目前無明顯風險";
+        return `目前健康分數：${analysis.score ?? "--"} / 100\n風險等級：${analysis.riskLevel || analysis.risk || "--"}\n主要風險：${risks}\n建議：${analysis.summary || analysis.healthAdvice || "請持續新增健康資料以取得更完整分析。"}`;
+    }
+
+    if (q.includes("fhir")) {
+        const bundle = typeof generateFHIRBundle === "function" ? generateFHIRBundle(typeof activeUserId === "function" ? activeUserId() : undefined) : null;
+        const count = bundle?.entry?.length || 0;
+        return `FHIR 是一種醫療資料交換標準。\n本平台使用 Patient、Observation、Practitioner、Bundle 管理健康資料。\n目前你的 FHIR Bundle 約包含 ${count} 筆 entry。`;
+    }
+
+    if (q.includes("observation")) {
+        return "Observation 代表量測資料，例如血壓、體重、BMI、心率、步數與睡眠。";
+    }
+
+    if (q.includes("教練")) {
+        return "健身教練只能查看使用者授權的運動資料，例如步數、運動時間、心率與熱量消耗。\n教練不能查看 FHIR JSON、完整健康資料或管理資料。";
+    }
+
+    if (q.includes("營養師") || q.includes("營養")) {
+        return "營養師只能查看使用者授權的營養與健康指標，例如 BMI、體重、血壓與飲食建議。\n營養師不能查看完整運動訓練紀錄、FHIR JSON 或管理資料。";
+    }
+
+    if (q.includes("改善") || q.includes("建議") || q.includes("怎麼")) {
+        const analysis = typeof runAIAnalysis === "function" ? runAIAnalysis(typeof activeUserId === "function" ? activeUserId() : undefined) : {};
+        return [
+            `飲食建議：${analysis.dietAdvice || "維持均衡飲食，減少高油高鈉。"}`,
+            `運動建議：${analysis.exerciseAdvice || "逐步增加每週有氧運動時間。"}`,
+            `睡眠建議：${analysis.sleepAdvice || "維持規律作息與足夠睡眠。"}`,
+            `就醫提醒：${analysis.medicalAdvice || "若有不適請諮詢專業醫療人員。"}`,
+            `生活習慣建議：${analysis.lifestyleAdvice || "持續追蹤健康資料並調整生活習慣。"}`
+        ].join("\n");
+    }
+
+    if (q.includes("授權") || q.includes("權限")) {
+        const count = Array.isArray(state.authorizations) ? state.authorizations.length : 0;
+        return `目前系統共有 ${count} 筆授權紀錄。\n你可以透過授權分享功能決定教練或營養師可查看的資料範圍。`;
+    }
+
+    return "我目前可以協助你解讀：\nBMI、血壓、運動量、AI 分析、FHIR、Observation、授權權限與健康改善建議。";
+}
+
+function assistantShellHTML() {
+    return `
+        <button type="button" class="ai-assistant-button" id="ai-assistant-button" onclick="toggleAssistantPanel()">AI 助理</button>
+        <section class="ai-assistant-panel" id="ai-assistant-panel" aria-live="polite">
+            <div class="ai-assistant-header">
+                <div><h2>AI 健康助理</h2><p>可協助解讀健康資料、FHIR、AI 分析與授權權限。</p></div>
+                <button type="button" onclick="toggleAssistantPanel(false)" aria-label="關閉 AI 健康助理">×</button>
+            </div>
+            <div class="ai-assistant-messages" id="ai-assistant-messages"></div>
+            <div class="ai-assistant-quick-actions">
+                ${AI_ASSISTANT_QUICK_QUESTIONS.map((item) => `<button type="button" onclick="sendAssistantMessage('${escapeHTML(item)}')">${escapeHTML(item)}</button>`).join("")}
+            </div>
+            <div class="ai-assistant-footer">
+                <div class="ai-assistant-input">
+                    <input id="ai-assistant-input" type="text" placeholder="輸入你的健康問題..." onkeydown="if(event.key==='Enter') sendAssistantMessage()" />
+                    <button type="button" onclick="sendAssistantMessage()">送出</button>
+                </div>
+                <button type="button" class="ai-assistant-clear" onclick="clearAssistantMessages()">清除對話</button>
+            </div>
+        </section>`;
+}
+
+function initAIHealthAssistant() {
+    ensureAssistantMessages();
+    if (!document.getElementById("ai-assistant-root")) {
+        const root = document.createElement("div");
+        root.id = "ai-assistant-root";
+        root.innerHTML = assistantShellHTML();
+        document.body.appendChild(root);
+    }
+    renderAssistantMessages();
+}
+
+function toggleAssistantPanel(force) {
+    initAIHealthAssistant();
+    const panel = document.getElementById("ai-assistant-panel");
+    const button = document.getElementById("ai-assistant-button");
+    const open = typeof force === "boolean" ? force : !panel?.classList.contains("open");
+    panel?.classList.toggle("open", open);
+    button?.classList.toggle("active", open);
+    if (open) {
+        renderAssistantMessages();
+        setTimeout(() => document.getElementById("ai-assistant-input")?.focus(), 80);
+    }
+}
+
+function sendAssistantMessage(presetQuestion) {
+    initAIHealthAssistant();
+    const input = document.getElementById("ai-assistant-input");
+    const question = String(presetQuestion || input?.value || "").trim();
+    if (!question) return;
+    ensureAssistantMessages();
+    state.assistantMessages.push({ role: "user", text: question, time: assistantTime() });
+    state.assistantMessages.push({ role: "assistant", text: generateAssistantReply(question), time: assistantTime() });
+    if (input) input.value = "";
+    saveState();
+    renderAssistantMessages();
+}
+
+function renderAssistantMessages() {
+    ensureAssistantMessages();
+    const box = document.getElementById("ai-assistant-messages");
+    if (!box) return;
+    const messages = state.assistantMessages.length
+        ? state.assistantMessages
+        : [{ role: "assistant", text: "你好，我是 AI 健康助理。你可以問我 BMI、血壓、運動量、AI 分析、FHIR 或授權權限。", time: assistantTime() }];
+    box.innerHTML = messages.map((item) => `
+        <div class="ai-message ${escapeHTML(item.role)}">
+            <p>${escapeHTML(item.text).replace(/\n/g, "<br>")}</p>
+            <small>${escapeHTML(item.time || "")}</small>
+        </div>
+    `).join("");
+    box.scrollTop = box.scrollHeight;
+}
+
+function clearAssistantMessages() {
+    state.assistantMessages = [];
+    saveState();
+    renderAssistantMessages();
+}
+
+var baseRenderAllBeforeAssistant = renderAll;
+renderAll = function assistantRenderAll() {
+    baseRenderAllBeforeAssistant();
+    initAIHealthAssistant();
+};
+
+window.initAIHealthAssistant = initAIHealthAssistant;
+window.toggleAssistantPanel = toggleAssistantPanel;
+window.sendAssistantMessage = sendAssistantMessage;
+window.generateAssistantReply = generateAssistantReply;
+window.renderAssistantMessages = renderAssistantMessages;
+window.clearAssistantMessages = clearAssistantMessages;
+window.getLatestHealthDataForAssistant = getLatestHealthDataForAssistant;
+window.getBMIStatus = getBMIStatus;
+window.getBloodPressureStatus = getBloodPressureStatus;
+window.getExerciseStatus = getExerciseStatus;
+window.renderAll = renderAll;
+
+window.addEventListener("load", initAIHealthAssistant);
+window.addEventListener("DOMContentLoaded", initAIHealthAssistant);
+
+// Blockchain authorization ledger upgrade.
+if (typeof SECTION_LABELS === "object") SECTION_LABELS["blockchain-section"] = "授權存證中心";
+
+function shortHash(hash) {
+    const value = String(hash || "--");
+    if (value.length <= 18) return value;
+    return `${value.slice(0, 8)}...${value.slice(-8)}`;
+}
+
+function blockchainCanonicalData(data) {
+    return [
+        data.authId || "",
+        data.from || "",
+        data.to || "",
+        Array.isArray(data.dataScope) ? data.dataScope.join("|") : data.dataScope || "",
+        data.timestamp || "",
+        data.previousHash || ""
+    ].join("::");
+}
+
+function generateBlockchainHash(data) {
+    const raw = blockchainCanonicalData(data);
+    let seed = typeof hashText === "function" ? hashText(raw) : 0;
+    if (typeof seed === "string") seed = seed.split("").reduce((sum, char) => sum + char.charCodeAt(0), 0);
+    const chunks = [];
+    for (let i = 0; i < 8; i += 1) {
+        const part = typeof hashText === "function" ? hashText(`${raw}:${seed}:${i}`) : Math.abs(Math.sin(seed + i) * 0xffffffff);
+        chunks.push(Math.abs(Number(part)).toString(16).padStart(8, "0").slice(0, 8));
+    }
+    return `0x${chunks.join("").toUpperCase()}`;
+}
+
+function normalizeBlockchainLog(log, index = 0) {
+    const previous = index < (state.blockchainLogs || []).length - 1 ? state.blockchainLogs[index + 1] : null;
+    const legacyHash = log.txHash || log.hash || "0xGENESIS";
+    return {
+        id: log.id || `BC-${String(index + 1).padStart(3, "0")}`,
+        txHash: legacyHash,
+        blockHeight: Number(log.blockHeight || 102938 + ((state.blockchainLogs || []).length - index)),
+        previousHash: log.previousHash || previous?.txHash || previous?.hash || "0xGENESIS",
+        from: log.from || log.source || "System",
+        to: log.to || "--",
+        dataScope: Array.isArray(log.dataScope) ? log.dataScope : (log.dataScope ? [log.dataScope] : []),
+        authId: log.authId || "",
+        timestamp: log.timestamp || log.createdAt || nowText(),
+        status: log.status || "Success",
+        eventType: log.eventType || log.event || "授權建立",
+        verifyStatus: log.verifyStatus || "未驗證"
+    };
+}
+
+function ensureBlockchainLogs() {
+    if (!Array.isArray(state.blockchainLogs)) state.blockchainLogs = [];
+    state.blockchainLogs = state.blockchainLogs.map(normalizeBlockchainLog);
+}
+
+function addBlockchainEvent(eventData) {
+    ensureBlockchainLogs();
+    const previous = state.blockchainLogs[0];
+    const timestamp = eventData.timestamp || nowText();
+    const log = {
+        id: eventData.id || (typeof uid === "function" ? uid("BC") : `BC-${Date.now()}`),
+        blockHeight: Number(eventData.blockHeight || (previous?.blockHeight ? previous.blockHeight + 1 : 102938)),
+        previousHash: eventData.previousHash || previous?.txHash || "0xGENESIS",
+        from: eventData.from || "System",
+        to: eventData.to || "--",
+        dataScope: Array.isArray(eventData.dataScope) ? eventData.dataScope : (eventData.dataScope ? [eventData.dataScope] : []),
+        authId: eventData.authId || "",
+        timestamp,
+        status: eventData.status || "Success",
+        eventType: eventData.eventType || "授權建立",
+        verifyStatus: eventData.verifyStatus || "未驗證"
+    };
+    log.txHash = eventData.txHash || generateBlockchainHash(log);
+    state.blockchainLogs.unshift(log);
+    saveState();
+    return log;
+}
+
+function addBlockchainLog(source, event, token) {
+    return addBlockchainEvent({
+        from: source,
+        to: event,
+        dataScope: [],
+        authId: token || "",
+        eventType: event || "授權建立",
+        status: "Success"
+    });
+}
+
+function blockchainLogById(logId) {
+    ensureBlockchainLogs();
+    return state.blockchainLogs.find((log) => log.id === logId);
+}
+
+function renderBlockchainOverview() {
+    ensureBlockchainLogs();
+    const validAuths = (state.authorizations || []).filter((auth) => typeof isAuthorizationValid === "function" ? isAuthorizationValid(auth) : auth.status !== "已撤回");
+    const latest = state.blockchainLogs[0];
+    const verified = state.blockchainLogs.filter((log) => log.verifyStatus === "驗證通過").length;
+    return `
+        <div class="blockchain-overview-grid">
+            <article class="blockchain-stat-card"><span>授權紀錄數</span><strong>${state.authorizations?.length || 0}</strong></article>
+            <article class="blockchain-stat-card"><span>有效授權數</span><strong>${validAuths.length}</strong></article>
+            <article class="blockchain-stat-card"><span>最近 Hash</span><strong class="blockchain-hash-box">${escapeHTML(shortHash(latest?.txHash))}</strong></article>
+            <article class="blockchain-stat-card"><span>最近區塊高度</span><strong>${escapeHTML(String(latest?.blockHeight || "--"))}</strong></article>
+            <article class="blockchain-stat-card"><span>驗證狀態</span><strong>${verified}/${state.blockchainLogs.length}</strong></article>
+        </div>`;
+}
+
+function renderBlockchainTimeline() {
+    ensureBlockchainLogs();
+    return `
+        <article class="card blockchain-timeline-card">
+            <h3>區塊鏈事件時間軸</h3>
+            <div class="blockchain-timeline">
+                ${state.blockchainLogs.slice(0, 12).map((log) => `
+                    <div class="blockchain-event ${escapeHTML(log.status.toLowerCase())}">
+                        <span></span>
+                        <div><strong>${escapeHTML(log.eventType)}</strong><p>${escapeHTML(log.from)} → ${escapeHTML(log.to)}</p><small>${escapeHTML(log.timestamp)} · Block ${escapeHTML(String(log.blockHeight))}</small></div>
+                    </div>
+                `).join("") || `<div class="empty">尚無區塊鏈事件。</div>`}
+            </div>
+        </article>`;
+}
+
+function blockchainVerifyBadge(status) {
+    const cls = status === "驗證通過" ? "success" : status === "資料可能遭竄改" ? "danger" : "pending";
+    return `<span class="blockchain-verify-badge ${cls}">${escapeHTML(status || "未驗證")}</span>`;
+}
+
+function renderBlockchainLogs() {
+    ensureBlockchainLogs();
+    return `
+        <article class="card table-card blockchain-log-card">
+            <h3>區塊鏈紀錄表格</h3>
+            <div class="health-record-table-wrapper">
+                <table class="blockchain-log-table">
+                    <thead><tr><th>Transaction Hash</th><th>Block Height</th><th>授權者</th><th>被授權者</th><th>資料範圍</th><th>授權時間</th><th>狀態</th><th>操作</th></tr></thead>
+                    <tbody>
+                        ${state.blockchainLogs.map((log) => `
+                            <tr>
+                                <td><code class="blockchain-hash-box">${escapeHTML(shortHash(log.txHash))}</code></td>
+                                <td>${escapeHTML(String(log.blockHeight))}</td>
+                                <td>${escapeHTML(log.from)}</td>
+                                <td>${escapeHTML(log.to)}</td>
+                                <td>${escapeHTML((log.dataScope || []).join("、") || "--")}</td>
+                                <td>${escapeHTML(log.timestamp)}</td>
+                                <td>${blockchainVerifyBadge(log.verifyStatus)}</td>
+                                <td class="blockchain-actions">
+                                    <button type="button" class="mini-button" onclick="openBlockchainDetail('${escapeHTML(log.id)}')">查看詳情</button>
+                                    <button type="button" class="mini-button" onclick="verifyBlockchainHash('${escapeHTML(log.id)}')">驗證 Hash</button>
+                                    <button type="button" class="mini-button" onclick="copyBlockchainHash('${escapeHTML(log.id)}')">複製 Hash</button>
+                                    ${log.authId ? `<button type="button" class="mini-button danger" onclick="revokeAuthorization('${escapeHTML(log.authId)}')">撤回授權</button>` : ""}
+                                </td>
+                            </tr>
+                        `).join("") || `<tr><td colspan="8">尚無區塊鏈紀錄。</td></tr>`}
+                    </tbody>
+                </table>
+            </div>
+        </article>`;
+}
+
+function blockchainExplanationCard() {
+    return `
+        <article class="card blockchain-explain-card">
+            <h3>為什麼健康資料不直接上鏈？</h3>
+            <ul>
+                <li>健康資料屬於敏感個資</li>
+                <li>區塊鏈資料不可刪除</li>
+                <li>因此只保存授權紀錄 Hash</li>
+                <li>真實健康資料仍保留在 FHIR Server 或使用者端</li>
+                <li>這樣能兼顧資料可追溯與隱私保護</li>
+            </ul>
+        </article>`;
+}
+
+function renderBlockchainCenter() {
+    const section = document.getElementById("blockchain-section");
+    if (!section) return;
+    ensureBlockchainLogs();
+    syncAuthorizationBlockchainEvents();
+    section.innerHTML = `
+        <div class="section-heading"><h2>區塊鏈授權存證中心</h2><p>以前端模擬區塊鏈保存授權 Hash，展示授權建立、QR Code、查看、到期與撤回的可追溯紀錄。</p></div>
+        ${renderBlockchainOverview()}
+        ${renderBlockchainTimeline()}
+        ${renderBlockchainLogs()}
+        ${blockchainExplanationCard()}
+        <div id="blockchain-detail-modal" class="blockchain-detail-modal" aria-hidden="true"></div>`;
+}
+
+function hasBlockchainEvent(authId, eventType, datePrefix = "") {
+    ensureBlockchainLogs();
+    return state.blockchainLogs.some((log) => log.authId === authId && log.eventType === eventType && (!datePrefix || String(log.timestamp).startsWith(datePrefix)));
+}
+
+function syncAuthorizationBlockchainEvents() {
+    ensureBlockchainLogs();
+    const today = nowText().slice(0, 10);
+    (state.authorizations || []).forEach((auth) => {
+        if (!auth?.id) return;
+        if (!hasBlockchainEvent(auth.id, "授權建立")) {
+            addBlockchainEvent({
+                from: auth.patientName || patientName?.(auth) || "User",
+                to: auth.targetName || auth.targetRole || "--",
+                dataScope: auth.dataScopes || [],
+                authId: auth.id,
+                eventType: "授權建立",
+                status: String(auth.status || "").includes("撤回") ? "Revoked" : "Success",
+                timestamp: auth.createdAt || nowText()
+            });
+        }
+        const expiry = Date.parse(auth.expiredAt || auth.expiresAt || "");
+        if (Number.isFinite(expiry) && expiry > Date.now() && expiry - Date.now() < 24 * 60 * 60 * 1000 && !hasBlockchainEvent(auth.id, "授權即將到期", today)) {
+            addBlockchainEvent({
+                from: auth.patientName || patientName?.(auth) || "User",
+                to: auth.targetName || auth.targetRole || "--",
+                dataScope: auth.dataScopes || [],
+                authId: auth.id,
+                eventType: "授權即將到期",
+                status: "Warning"
+            });
+        }
+    });
+}
+
+function recordAuthorizationViewEvent(role) {
+    const today = nowText().slice(0, 10);
+    const auths = typeof getAuthorizationsByRole === "function" ? getAuthorizationsByRole(role).filter(isAuthorizationValid) : [];
+    auths.forEach((auth) => {
+        if (hasBlockchainEvent(auth.id, "授權資料被查看", today)) return;
+        addBlockchainEvent({
+            from: auth.patientName || patientName?.(auth) || "User",
+            to: auth.targetName || auth.targetRole || role,
+            dataScope: auth.dataScopes || [],
+            authId: auth.id,
+            eventType: "授權資料被查看",
+            status: "Success"
+        });
+    });
+}
+
+function verifyBlockchainHash(logId) {
+    const log = blockchainLogById(logId);
+    if (!log) return;
+    const recalculated = generateBlockchainHash(log);
+    log.verifyStatus = recalculated === log.txHash ? "驗證通過" : "資料可能遭竄改";
+    saveState();
+    renderBlockchainCenter();
+    showToast(log.verifyStatus);
+}
+
+function copyBlockchainHash(logId) {
+    const log = blockchainLogById(logId);
+    if (!log) return;
+    if (navigator.clipboard?.writeText) navigator.clipboard.writeText(log.txHash).then(() => showToast("Hash 已複製"));
+    else showToast("瀏覽器不支援剪貼簿 API");
+}
+
+function openBlockchainDetail(logId) {
+    const log = blockchainLogById(logId);
+    const modal = document.getElementById("blockchain-detail-modal");
+    if (!log || !modal) return;
+    modal.innerHTML = `
+        <div class="blockchain-detail-backdrop" onclick="closeBlockchainDetail()"></div>
+        <div class="blockchain-detail-card">
+            <div class="fhir-card-title-row"><h3>區塊鏈存證詳情</h3><button type="button" class="secondary-button" onclick="closeBlockchainDetail()">關閉</button></div>
+            <div class="blockchain-detail-grid">
+                <span>Transaction Hash</span><code>${escapeHTML(log.txHash)}</code>
+                <span>Block Height</span><strong>${escapeHTML(String(log.blockHeight))}</strong>
+                <span>Previous Hash</span><code>${escapeHTML(log.previousHash)}</code>
+                <span>授權者</span><strong>${escapeHTML(log.from)}</strong>
+                <span>被授權者</span><strong>${escapeHTML(log.to)}</strong>
+                <span>資料範圍</span><strong>${escapeHTML((log.dataScope || []).join("、") || "--")}</strong>
+                <span>授權 ID</span><strong>${escapeHTML(log.authId || "--")}</strong>
+                <span>事件類型</span><strong>${escapeHTML(log.eventType)}</strong>
+                <span>時間戳記</span><strong>${escapeHTML(log.timestamp)}</strong>
+                <span>驗證狀態</span><strong>${escapeHTML(log.verifyStatus)}</strong>
+            </div>
+            <p class="blockchain-detail-note">健康資料不上鏈，只上鏈授權 Hash。</p>
+        </div>`;
+    modal.classList.add("open");
+    modal.setAttribute("aria-hidden", "false");
+}
+
+function closeBlockchainDetail() {
+    const modal = document.getElementById("blockchain-detail-modal");
+    if (!modal) return;
+    modal.classList.remove("open");
+    modal.setAttribute("aria-hidden", "true");
+    modal.innerHTML = "";
+}
+
+function revokeAuthorization(authId) {
+    const auth = (state.authorizations || []).find((item) => item.id === authId);
+    if (!auth || String(auth.status).includes("撤回")) {
+        showToast("授權不存在或已撤回");
+        return;
+    }
+    auth.status = "已撤回";
+    auth.revokedAt = nowText();
+    addBlockchainEvent({
+        from: auth.patientName || patientName?.(auth) || "User",
+        to: auth.targetName || auth.targetRole || "--",
+        dataScope: auth.dataScopes || [],
+        authId: auth.id,
+        eventType: "授權撤回",
+        status: "Revoked"
+    });
+    if (typeof addNotification === "function") addNotification("授權已撤回", `已撤回 ${auth.targetName || auth.targetRole} 的資料授權。`, "authorization", "warning", "blockchain-section", `${auth.id}:revoked`);
+    if (typeof addAuditLog === "function") addAuditLog("撤回授權", `Authorization ${auth.id}`, "Success");
+    saveState();
+    renderAll();
+    showToast("授權已撤回");
+}
+
+var baseIsAuthorizationValidBeforeBlockchain = isAuthorizationValid;
+isAuthorizationValid = function blockchainAuthorizationValid(auth) {
+    if (!auth || String(auth.status || "").includes("撤回")) return false;
+    return baseIsAuthorizationValidBeforeBlockchain(auth);
+};
+
+var baseGenerateQRCodeBeforeBlockchain = generateQRCode;
+generateQRCode = function blockchainGenerateQRCode(event) {
+    const before = state.authorizations?.length || 0;
+    baseGenerateQRCodeBeforeBlockchain(event);
+    if ((state.authorizations?.length || 0) > before) {
+        const auth = state.authorizations[state.authorizations.length - 1];
+        addBlockchainEvent({
+            from: auth.patientName || "User",
+            to: auth.targetName || auth.targetRole || "--",
+            dataScope: auth.dataScopes || [],
+            authId: auth.id,
+            eventType: "QR Code 產生",
+            status: "Success"
+        });
+        if (typeof addAuditLog === "function") addAuditLog("建立區塊鏈授權存證", `Authorization ${auth.id}`, "Success");
+    }
+};
+
+var baseRenderAllBeforeBlockchainCenter = renderAll;
+renderAll = function blockchainCenterRenderAll() {
+    baseRenderAllBeforeBlockchainCenter();
+    renderBlockchainCenter();
+};
+
+var baseShowSectionBeforeBlockchain = showSection;
+showSection = function blockchainShowSection(sectionId) {
+    baseShowSectionBeforeBlockchain(sectionId);
+    if (["student-exercise-section", "student-heart-rate-section", "training-advice-section"].includes(sectionId)) recordAuthorizationViewEvent("coach");
+    if (["bmi-analysis-section", "weight-trend-section", "blood-pressure-section", "diet-advice-section"].includes(sectionId)) recordAuthorizationViewEvent("nutritionist");
+};
+
+window.generateBlockchainHash = generateBlockchainHash;
+window.addBlockchainEvent = addBlockchainEvent;
+window.renderBlockchainOverview = renderBlockchainOverview;
+window.renderBlockchainTimeline = renderBlockchainTimeline;
+window.renderBlockchainLogs = renderBlockchainLogs;
+window.verifyBlockchainHash = verifyBlockchainHash;
+window.copyBlockchainHash = copyBlockchainHash;
+window.openBlockchainDetail = openBlockchainDetail;
+window.closeBlockchainDetail = closeBlockchainDetail;
+window.revokeAuthorization = revokeAuthorization;
+window.isAuthorizationValid = isAuthorizationValid;
+window.generateQRCode = generateQRCode;
+window.showSection = showSection;
+window.renderAll = renderAll;
+
+// Care Team collaboration center.
+window.rolePermissions = {
+    ...(window.rolePermissions || {}),
+    user: Array.from(new Set([...(window.rolePermissions?.user || []), "care-team-section"])),
+    coach: Array.from(new Set([...(window.rolePermissions?.coach || []), "care-team-section"])),
+    nutritionist: Array.from(new Set([...(window.rolePermissions?.nutritionist || []), "care-team-section"])),
+    admin: Array.from(new Set([...(window.rolePermissions?.admin || []), "care-team-section"]))
+};
+
+if (typeof SECTION_LABELS === "object") SECTION_LABELS["care-team-section"] = "Care Team 協作中心";
+
+function ensureCareTeamStore() {
+    if (!Array.isArray(state.careTeamMessages)) {
+        state.careTeamMessages = [
+            { id: "CTM-20260625-001", authId: "AUTH-20260628-001", fromRole: "coach", fromName: "李教練", patientId: "ACC-USER-DEMO", patientName: "王小明", text: "今天建議跑步30分鐘。", time: "2026-06-25 09:30" },
+            { id: "CTM-20260626-001", authId: "AUTH-20260628-002", fromRole: "nutritionist", fromName: "陳營養師", patientId: "ACC-USER-DEMO", patientName: "王小明", text: "建議增加蛋白質。", time: "2026-06-26 10:00" },
+            { id: "CTM-20260627-001", authId: "", fromRole: "ai", fromName: "AI 健康助理", patientId: "ACC-USER-DEMO", patientName: "王小明", text: "建議睡眠增加30分鐘。", time: "2026-06-27 08:00" }
+        ];
+        saveState();
+    }
+}
+
+function careRoleLabel(role) {
+    return ({ coach: "Coach", nutritionist: "Nutritionist", doctor: "Doctor", ai: "AI", user: "User", admin: "Admin" })[role] || role || "--";
+}
+
+function careDataScopes(role) {
+    if (role === "coach") return ["運動紀錄", "心率", "步數", "熱量消耗"];
+    if (role === "nutritionist") return ["BMI", "體重", "血壓", "飲食建議"];
+    if (role === "doctor") return ["血壓", "BMI", "心率", "AI 分析摘要"];
+    return [];
+}
+
+function careTeamAuthsForUser(patientId = activeUserId()) {
+    return (state.authorizations || [])
+        .map((auth) => (typeof normalizeAuthorization === "function" ? normalizeAuthorization(auth) : auth))
+        .filter((auth) => (auth.patientId || (typeof authPatientId === "function" ? authPatientId(auth) : "")) === patientId)
+        .sort((a, b) => String(b.createdAt || "").localeCompare(String(a.createdAt || "")));
+}
+
+function careTeamValidAuthsByRole(role) {
+    return (typeof getAuthorizationsByRole === "function" ? getAuthorizationsByRole(role) : (state.authorizations || []).filter((auth) => auth.targetRole === role))
+        .filter((auth) => (typeof isAuthorizationValid === "function" ? isAuthorizationValid(auth) : !String(auth.status || "").includes("撤回")));
+}
+
+function carePatientLatest(auth) {
+    const patientId = typeof authPatientId === "function" ? authPatientId(auth) : auth.patientId;
+    return typeof latestRecord === "function" ? latestRecord(patientId) : null;
+}
+
+function carePatientAnalysis(auth) {
+    const patientId = typeof authPatientId === "function" ? authPatientId(auth) : auth.patientId;
+    return typeof runAIAnalysis === "function" ? runAIAnalysis(patientId) : {};
+}
+
+function careMessageRows(patientId) {
+    ensureCareTeamStore();
+    return state.careTeamMessages
+        .filter((message) => !patientId || message.patientId === patientId)
+        .sort((a, b) => String(a.time).localeCompare(String(b.time)));
+}
+
+function addCareTeamMessage(authId, text, roleOverride) {
+    ensureCareTeamStore();
+    const auth = (state.authorizations || []).find((item) => item.id === authId) || {};
+    const role = roleOverride || getCurrentRole();
+    const account = currentAccount?.() || {};
+    const message = {
+        id: typeof uid === "function" ? uid("CTM") : `CTM-${Date.now()}`,
+        authId: authId || "",
+        fromRole: role,
+        fromName: role === "ai" ? "AI 健康助理" : account.name || careRoleLabel(role),
+        patientId: auth.patientId || activeUserId(),
+        patientName: auth.patientName || patientName?.(auth) || state.patient?.name || "--",
+        text: String(text || "").trim(),
+        time: nowText()
+    };
+    if (!message.text) return;
+    state.careTeamMessages.push(message);
+    if (typeof addNotification === "function") addNotification("Care Team 留言", `${message.fromName}：${message.text}`, "system", "info", "care-team-section", message.id);
+    saveState();
+    renderCareTeam();
+}
+
+function addCareTeamMember(event) {
+    event?.preventDefault();
+    const role = valueOf("care-member-role");
+    const name = valueOf("care-member-name") || careRoleLabel(role);
+    const duration = valueOf("care-member-duration") || "30天";
+    if (!role) {
+        showToast("請選擇照護角色");
+        return;
+    }
+    const patient = currentAccount()?.role === "user" ? currentAccount() : state.accounts.find((item) => item.role === "user");
+    const createdAt = nowText();
+    const auth = {
+        id: typeof nextAuthorizationId === "function" ? nextAuthorizationId() : `AUTH-${Date.now()}`,
+        patientId: patient?.id || activeUserId(),
+        patientName: patient?.name || state.patient?.name || "User",
+        targetRole: role,
+        targetName: name,
+        dataScopes: careDataScopes(role),
+        duration,
+        status: "有效",
+        hash: `0x${(typeof hashText === "function" ? hashText(`${role}-${name}-${createdAt}`) : Date.now()).toString().toUpperCase()}`,
+        createdAt,
+        expiredAt: typeof authorizationExpiredAt === "function" ? authorizationExpiredAt(duration) : duration
+    };
+    state.authorizations.push(auth);
+    if (typeof addBlockchainEvent === "function") addBlockchainEvent({ from: auth.patientName, to: auth.targetName, dataScope: auth.dataScopes, authId: auth.id, eventType: "Care Team 成員新增", status: "Success" });
+    if (typeof addNotification === "function") addNotification("已新增照護成員", `${auth.targetName} 已加入 Care Team。`, "authorization", "success", "care-team-section", `${auth.id}:care-add`);
+    if (typeof addAuditLog === "function") addAuditLog("新增照護成員", `Care Team ${auth.id}`, "Success");
+    saveState();
+    renderCareTeam();
+    showToast("照護成員已新增");
+}
+
+function removeCareTeamMember(authId) {
+    if (typeof revokeAuthorization === "function") {
+        revokeAuthorization(authId);
+        return;
+    }
+    const auth = (state.authorizations || []).find((item) => item.id === authId);
+    if (!auth) return;
+    auth.status = "已撤回";
+    auth.revokedAt = nowText();
+    saveState();
+    renderCareTeam();
+}
+
+function careTeamTimeline(patientId = activeUserId()) {
+    const messages = careMessageRows(patientId).map((message) => ({ date: message.time, label: `${careRoleLabel(message.fromRole)}留言`, text: message.text }));
+    const ai = typeof runAIAnalysis === "function" ? runAIAnalysis(patientId) : {};
+    if (ai.summary) messages.push({ date: nowText(), label: "AI分析", text: ai.summary });
+    const latest = typeof latestRecord === "function" ? latestRecord(patientId) : null;
+    if (latest?.exercise) messages.push({ date: latest.date || nowText(), label: "User完成運動", text: `完成運動 ${latest.exercise} 分鐘` });
+    return messages.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+}
+
+function renderCareTimeline(patientId = activeUserId()) {
+    return `<article class="card care-timeline-card"><h3>Care Timeline</h3><div class="care-timeline">${careTeamTimeline(patientId).map((item) => `<div class="care-timeline-item"><time>${escapeHTML(String(item.date).slice(5, 10).replace("-", "/"))}</time><div><strong>${escapeHTML(item.label)}</strong><p>${escapeHTML(item.text)}</p></div></div>`).join("") || `<p class="empty">尚無 Timeline。</p>`}</div></article>`;
+}
+
+function renderCareMessages(patientId = activeUserId(), authId = "") {
+    const messages = careMessageRows(patientId).filter((message) => !authId || message.authId === authId);
+    return `<div class="care-message-list">${messages.map((message) => `<div class="care-message-bubble ${escapeHTML(message.fromRole)}"><strong>${escapeHTML(message.fromName)}</strong><p>${escapeHTML(message.text)}</p><small>${escapeHTML(message.time)}</small></div>`).join("") || `<p class="empty">尚無留言。</p>`}</div>`;
+}
+
+function renderUserCareTeam() {
+    const auths = careTeamAuthsForUser(activeUserId());
+    return `
+        <div class="care-team-layout">
+            <article class="card care-team-panel">
+                <h3>目前授權照護成員</h3>
+                <div class="care-member-grid">
+                    ${["coach", "nutritionist", "doctor"].map((role) => {
+                        const list = auths.filter((auth) => auth.targetRole === role);
+                        return `<div class="care-role-card"><span>${careRoleLabel(role)}</span>${list.map((auth) => `<div class="care-member-row"><strong>${escapeHTML(auth.targetName || careRoleLabel(role))}</strong><small>期限：${escapeHTML(auth.expiredAt || auth.duration || "--")}</small><p>${escapeHTML((auth.dataScopes || []).join("、") || "--")}</p><button type="button" class="mini-button danger" onclick="removeCareTeamMember('${escapeHTML(auth.id)}')">移除照護成員</button></div>`).join("") || `<p class="empty">尚未授權 ${careRoleLabel(role)}</p>`}</div>`;
+                    }).join("")}
+                </div>
+            </article>
+            <article class="card care-team-panel">
+                <h3>新增照護成員</h3>
+                <form class="care-member-form" onsubmit="addCareTeamMember(event)">
+                    <div class="form-group"><label for="care-member-role">角色</label><select id="care-member-role"><option value="coach">Coach</option><option value="nutritionist">Nutritionist</option><option value="doctor">Doctor</option></select></div>
+                    <div class="form-group"><label for="care-member-name">姓名</label><input id="care-member-name" type="text" placeholder="輸入照護成員姓名" /></div>
+                    <div class="form-group"><label for="care-member-duration">授權期限</label><select id="care-member-duration"><option>7天</option><option selected>30天</option><option>永久授權</option></select></div>
+                    <button type="submit" class="primary-button">新增照護成員</button>
+                </form>
+            </article>
+        </div>
+        <div class="care-team-layout">
+            <article class="card care-message-panel"><h3>Coach / Nutrition / AI 留言</h3>${renderCareMessages(activeUserId())}</article>
+            ${renderCareTimeline(activeUserId())}
+        </div>`;
+}
+
+function renderCoachCareTeam() {
+    const auths = careTeamValidAuthsByRole("coach").filter((auth) => typeof hasCoachDataScope === "function" ? hasCoachDataScope(auth) : true);
+    return `<div class="care-provider-grid">${auths.map((auth) => {
+        const latest = carePatientLatest(auth) || {};
+        const analysis = carePatientAnalysis(auth);
+        return `<article class="card care-provider-card"><h3>${escapeHTML(auth.patientName || patientName?.(auth) || "學員")}</h3><div class="care-provider-metrics"><span>步數 <strong>${escapeHTML(String(latest.steps || "--"))}</strong></span><span>心率 <strong>${escapeHTML(String(latest.heartRate || latest.hr || "--"))}</strong></span><span>運動 <strong>${escapeHTML(String(latest.exercise || "--"))} 分</strong></span></div><div class="care-ai-note"><strong>AI運動建議</strong><p>${escapeHTML(analysis.exerciseAdvice || "--")}</p></div>${renderCareMessages(auth.patientId, auth.id)}<div class="care-comment-box"><input id="care-msg-${escapeHTML(auth.id)}" placeholder="輸入留言，例如：今天建議跑步30分鐘。" /><button onclick="addCareTeamMessage('${escapeHTML(auth.id)}', document.getElementById('care-msg-${escapeHTML(auth.id)}').value)">留言</button></div></article>`;
+    }).join("") || `<article class="card empty">目前沒有管理學員。</article>`}</div>${renderCareTimeline(auths[0]?.patientId || "")}`;
+}
+
+function renderNutritionCareTeam() {
+    const auths = careTeamValidAuthsByRole("nutritionist").filter((auth) => typeof hasNutritionDataScope === "function" ? hasNutritionDataScope(auth) : true);
+    return `<div class="care-provider-grid">${auths.map((auth) => {
+        const latest = carePatientLatest(auth) || {};
+        const analysis = carePatientAnalysis(auth);
+        return `<article class="card care-provider-card"><h3>${escapeHTML(auth.patientName || patientName?.(auth) || "個案")}</h3><div class="care-provider-metrics"><span>BMI <strong>${escapeHTML(String(latest.bmi || "--"))}</strong></span><span>體重 <strong>${escapeHTML(String(latest.weight || "--"))} kg</strong></span><span>血壓 <strong>${escapeHTML(latest.systolic ? `${latest.systolic}/${latest.diastolic}` : "--")}</strong></span></div><div class="care-ai-note"><strong>飲食建議</strong><p>${escapeHTML(analysis.dietAdvice || "--")}</p></div>${renderCareMessages(auth.patientId, auth.id)}<div class="care-comment-box"><input id="care-msg-${escapeHTML(auth.id)}" placeholder="輸入留言，例如：建議增加蛋白質。" /><button onclick="addCareTeamMessage('${escapeHTML(auth.id)}', document.getElementById('care-msg-${escapeHTML(auth.id)}').value)">留言</button></div></article>`;
+    }).join("") || `<article class="card empty">目前沒有管理個案。</article>`}</div>${renderCareTimeline(auths[0]?.patientId || "")}`;
+}
+
+function renderAdminCareTeam() {
+    const rows = (state.authorizations || []).map((auth) => `<tr><td>${escapeHTML(auth.patientName || "--")}</td><td>${escapeHTML(auth.targetName || careRoleLabel(auth.targetRole))}</td><td>${escapeHTML(careRoleLabel(auth.targetRole))}</td><td>${escapeHTML((auth.dataScopes || []).join("、"))}</td><td>${escapeHTML(auth.expiredAt || auth.duration || "--")}</td><td>${escapeHTML(auth.status || "--")}</td></tr>`).join("") || `<tr><td colspan="6">尚無照護關係。</td></tr>`;
+    return `<article class="card care-admin-card"><h3>全部照護關係</h3><div class="health-record-table-wrapper"><table class="care-team-table"><thead><tr><th>User</th><th>照護成員</th><th>角色</th><th>授權資料</th><th>期限</th><th>狀態</th></tr></thead><tbody>${rows}</tbody></table></div></article>`;
+}
+
+function ensureCareTeamUI() {
+    const role = getCurrentRole();
+    if (!["user", "coach", "nutritionist", "admin"].includes(role)) return;
+    const pageContent = document.querySelector(".page-content");
+    if (!pageContent) return;
+    let section = document.getElementById("care-team-section");
+    if (!section) {
+        section = document.createElement("section");
+        section.id = "care-team-section";
+        section.className = "content-section";
+        const before = document.getElementById("notification-section") || pageContent.lastElementChild;
+        pageContent.insertBefore(section, before || null);
+    }
+    const navMenu = document.getElementById("nav-menu");
+    if (navMenu && !navMenu.querySelector('[data-section="care-team-section"]')) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "nav-btn";
+        button.dataset.section = "care-team-section";
+        button.textContent = "Care Team";
+        button.onclick = () => showSection("care-team-section");
+        const before = navMenu.querySelector('[data-section="notification-section"]');
+        navMenu.insertBefore(button, before || null);
+    }
+}
+
+function renderCareTeam() {
+    ensureCareTeamStore();
+    ensureCareTeamUI();
+    const section = document.getElementById("care-team-section");
+    if (!section) return;
+    const role = getCurrentRole();
+    const subtitle = role === "coach" ? "目前管理學員、健康資料、AI 運動建議與留言。" : role === "nutritionist" ? "目前管理個案、BMI、體重、飲食建議與留言。" : role === "admin" ? "查看全部照護關係。" : "查看 Coach、Nutritionist、Doctor 授權與留言。";
+    section.innerHTML = `<div class="section-heading care-team-heading"><h2>Care Team 協作中心</h2><p>${escapeHTML(subtitle)}</p></div>${role === "coach" ? renderCoachCareTeam() : role === "nutritionist" ? renderNutritionCareTeam() : role === "admin" ? renderAdminCareTeam() : renderUserCareTeam()}`;
+}
+
+var baseRenderAllBeforeCareTeam = renderAll;
+renderAll = function careTeamRenderAll() {
+    baseRenderAllBeforeCareTeam();
+    renderCareTeam();
+};
+
+window.addCareTeamMember = addCareTeamMember;
+window.removeCareTeamMember = removeCareTeamMember;
+window.addCareTeamMessage = addCareTeamMessage;
+window.renderCareTeam = renderCareTeam;
+window.renderCareTimeline = renderCareTimeline;
+window.renderAll = renderAll;
