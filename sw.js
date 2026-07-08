@@ -1,4 +1,4 @@
-const CACHE_NAME = "ai-health-platform-v1";
+const CACHE_NAME = "ai-health-platform-v2";
 const PRECACHE_URLS = [
     "index.html",
     "app-user.html",
