@@ -57,6 +57,14 @@ let trendRange = 7;
 const chartPoints = {};
 const _charts = {};
 
+function safeInsertBefore(parent, newNode, referenceNode) {
+    if (parent && referenceNode && referenceNode.parentNode === parent) {
+        parent.insertBefore(newNode, referenceNode);
+    } else if (parent) {
+        parent.appendChild(newNode);
+    }
+}
+
 // ─── State ────────────────────────────────────────────────────────────
 
 function createDefaultState() {
@@ -394,7 +402,7 @@ function ensureProfileUI() {
             </div>
         `;
         const healthInput = document.getElementById("health-input-section");
-        pageContent.insertBefore(section, healthInput || pageContent.firstChild);
+        safeInsertBefore(pageContent, section, healthInput || pageContent.firstChild);
     }
     const navMenu = document.getElementById("nav-menu");
     if (navMenu && !navMenu.querySelector('[data-section="profile-section"]')) {
@@ -2490,7 +2498,7 @@ function ensureHealthReportSection() {
         </div>
         <div id="health-report-panel"></div>`;
     const fhirSection = document.getElementById("fhir-viewer-section");
-    pageContent.insertBefore(section, fhirSection || pageContent.lastElementChild);
+    safeInsertBefore(pageContent, section, fhirSection || pageContent.lastElementChild);
 }
 
 function ensureHealthReportNav() {
@@ -2503,7 +2511,7 @@ function ensureHealthReportNav() {
     button.type = "button";
     button.textContent = "健康風險報告";
     button.onclick = () => showSection("health-report-section");
-    if (aiDropdown) aiDropdown.insertBefore(button, aiDropdown.querySelector('[data-section="fhir-viewer-section"]'));
+    if (aiDropdown) safeInsertBefore(aiDropdown, button, aiDropdown.querySelector('[data-section="fhir-viewer-section"]'));
     else navMenu.appendChild(button);
 }
 
@@ -3087,7 +3095,7 @@ function ensureWearableImportUI() {
         button.textContent = "穿戴裝置匯入";
         button.onclick = () => showSection("wearable-import-section");
         const notificationButton = navMenu.querySelector('[data-section="notification-section"]');
-        navMenu.insertBefore(button, notificationButton || null);
+        safeInsertBefore(navMenu, button, notificationButton || null);
     }
 
     if (!document.getElementById("wearable-import-section")) {
@@ -3096,7 +3104,7 @@ function ensureWearableImportUI() {
         section.className = "content-section";
         section.innerHTML = wearableImportSectionHTML();
         const registrationSection = document.getElementById("registration-section");
-        pageContent.insertBefore(section, registrationSection || pageContent.lastElementChild);
+        safeInsertBefore(pageContent, section, registrationSection || pageContent.lastElementChild);
     }
 }
 
@@ -3420,7 +3428,7 @@ function ensureSecurityCenterUI() {
         button.textContent = "資料安全";
         button.onclick = () => showSection("security-center-section");
         const before = navMenu.querySelector('[data-section="system-setting-section"]') || navMenu.querySelector('[data-section="notification-section"]');
-        navMenu.insertBefore(button, before || null);
+        safeInsertBefore(navMenu, button, before || null);
     }
 
     if (!document.getElementById("security-center-section")) {
@@ -3428,7 +3436,7 @@ function ensureSecurityCenterUI() {
         section.id = "security-center-section";
         section.className = "content-section";
         const before = document.getElementById("system-setting-section") || document.getElementById("notification-section");
-        pageContent.insertBefore(section, before || null);
+        safeInsertBefore(pageContent, section, before || null);
     }
 }
 
@@ -4031,14 +4039,14 @@ function ensureFHIRValidatorUI() {
         button.textContent = "FHIR 驗證";
         button.onclick = () => showSection("fhir-validator-section");
         const before = navMenu.querySelector('[data-section="security-center-section"]') || navMenu.querySelector('[data-section="notification-section"]') || navMenu.querySelector('[data-section="system-setting-section"]');
-        navMenu.insertBefore(button, before || null);
+        safeInsertBefore(navMenu, button, before || null);
     }
     if (!document.getElementById("fhir-validator-section")) {
         const section = document.createElement("section");
         section.id = "fhir-validator-section";
         section.className = "content-section";
         const before = document.getElementById("security-center-section") || document.getElementById("notification-section") || document.getElementById("system-setting-section");
-        pageContent.insertBefore(section, before || null);
+        safeInsertBefore(pageContent, section, before || null);
     }
 }
 
@@ -4608,14 +4616,14 @@ function ensureAIPredictionUI() {
         button.textContent = "AI 風險預測";
         button.onclick = () => showSection("ai-prediction-section");
         const before = navMenu.querySelector('[data-section="ai-health-section"]') || navMenu.querySelector('[data-section="fhir-validator-section"]') || navMenu.querySelector('[data-section="notification-section"]');
-        navMenu.insertBefore(button, before || null);
+        safeInsertBefore(navMenu, button, before || null);
     }
     if (!document.getElementById("ai-prediction-section")) {
         const section = document.createElement("section");
         section.id = "ai-prediction-section";
         section.className = "content-section";
         const before = document.getElementById("ai-health-section") || document.getElementById("fhir-validator-section") || document.getElementById("notification-section");
-        pageContent.insertBefore(section, before || null);
+        safeInsertBefore(pageContent, section, before || null);
     }
 }
 
@@ -4819,7 +4827,7 @@ function ensureHealthReportDownloadSection() {
         section.id = "health-report-section";
         section.className = "content-section";
         const before = document.getElementById("fhir-viewer-section") || document.getElementById("ai-prediction-section") || document.getElementById("notification-section");
-        pageContent.insertBefore(section, before || null);
+        safeInsertBefore(pageContent, section, before || null);
     }
     const navMenu = document.getElementById("nav-menu");
     if (navMenu && !navMenu.querySelector('[data-section="health-report-section"]')) {
@@ -4830,7 +4838,7 @@ function ensureHealthReportDownloadSection() {
         button.textContent = "健康報告下載";
         button.onclick = () => showSection("health-report-section");
         const before = navMenu.querySelector('[data-section="ai-prediction-section"]') || navMenu.querySelector('[data-section="fhir-validator-section"]') || navMenu.querySelector('[data-section="notification-section"]');
-        navMenu.insertBefore(button, before || null);
+        safeInsertBefore(navMenu, button, before || null);
     }
     return section;
 }
@@ -5817,7 +5825,7 @@ function ensureCareTeamUI() {
         section.id = "care-team-section";
         section.className = "content-section";
         const before = document.getElementById("notification-section") || pageContent.lastElementChild;
-        pageContent.insertBefore(section, before || null);
+        safeInsertBefore(pageContent, section, before || null);
     }
     const navMenu = document.getElementById("nav-menu");
     if (navMenu && !navMenu.querySelector('[data-section="care-team-section"]')) {
@@ -5828,7 +5836,7 @@ function ensureCareTeamUI() {
         button.textContent = "Care Team";
         button.onclick = () => showSection("care-team-section");
         const before = navMenu.querySelector('[data-section="notification-section"]');
-        navMenu.insertBefore(button, before || null);
+        safeInsertBefore(navMenu, button, before || null);
     }
 }
 
