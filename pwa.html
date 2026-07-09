@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PWA 行動隨身版 | AI Health Platform</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="auth.css" />
+    <link rel="stylesheet" href="vendor/bootstrap-icons/bootstrap-icons.css" />
+    <meta name="theme-color" content="#0ea5e9" />
+    <style>
+        .pwa-page-card {
+            max-width: 540px;
+            width: 100%;
+            margin: 0 auto;
+            position: relative;
+            z-index: 10;
+        }
+        .pwa-icon-wrapper {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 24px;
+        }
+        .pwa-logo-glow {
+            width: 80px;
+            height: 80px;
+            border-radius: 22px;
+            background: linear-gradient(135deg, #10b981 0%, #06b6d4 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 35px rgba(6, 182, 212, 0.5);
+            font-size: 32px;
+            color: white;
+            font-weight: 900;
+        }
+        .pwa-page-card h1 {
+            font-size: 26px !important;
+            font-weight: 800 !important;
+            color: white !important;
+            text-align: center;
+            margin-top: 0 !important;
+            margin-bottom: 12px !important;
+        }
+        .pwa-page-card .pwa-desc {
+            font-size: 15px !important;
+            color: #94a3b8 !important;
+            text-align: center !important;
+            line-height: 1.6 !important;
+            margin-bottom: 28px !important;
+        }
+        .pwa-page-card .pwa-features-box {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 16px;
+            padding: 20px 24px;
+            margin-bottom: 30px;
+        }
+        .pwa-features-box ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .pwa-features-box li {
+            font-size: 14px !important;
+            color: #cbd5e1 !important;
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            line-height: 1.5;
+        }
+        .pwa-actions-row {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+        .pwa-btn-install {
+            width: 100%;
+            padding: 14px !important;
+            background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%) !important;
+            border: none !important;
+            border-radius: 12px !important;
+            color: white !important;
+            font-size: 16px !important;
+            font-weight: 700 !important;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(6, 182, 212, 0.25) !important;
+            transition: all 0.25s ease !important;
+            text-align: center;
+        }
+        .pwa-btn-install:hover {
+            background: linear-gradient(135deg, #22d3ee 0%, #06b6d4 100%) !important;
+            transform: translateY(-1.5px) !important;
+            box-shadow: 0 6px 20px rgba(6, 182, 212, 0.35) !important;
+        }
+        .pwa-btn-back {
+            width: 100%;
+            padding: 14px !important;
+            background: rgba(255, 255, 255, 0.05) !important;
+            border: 1px solid rgba(255, 255, 255, 0.1) !important;
+            border-radius: 12px !important;
+            color: #cbd5e1 !important;
+            font-size: 15px !important;
+            font-weight: 600 !important;
+            cursor: pointer;
+            transition: all 0.25s ease !important;
+            text-align: center;
+            text-decoration: none !important;
+            display: block;
+            box-sizing: border-box;
+        }
+        .pwa-btn-back:hover {
+            background: rgba(255, 255, 255, 0.09) !important;
+            color: white !important;
+            border-color: rgba(255, 255, 255, 0.2) !important;
+        }
+        .pwa-badge-wrap {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 12px;
+        }
+    </style>
+</head>
+<body class="auth-body">
+    <div class="auth-page">
+        <!-- Background Image with 50% mask overlay -->
+        <div class="auth-bg" aria-hidden="true"></div>
+
+        <div class="pwa-page-card auth-card">
+            <div class="pwa-badge-wrap">
+                <span class="pwa-card-badge">PWA Progressive App</span>
+            </div>
+            
+            <div class="pwa-icon-wrapper">
+                <div class="pwa-logo-glow">AI</div>
+            </div>
+
+            <h1>PWA 行動隨身版</h1>
+            <p class="pwa-desc">將 AI Health Platform 加入手機主畫面，開啟如原生 App 的流暢離線紀錄與智能分析體驗。</p>
+            
+            <div class="pwa-features-box">
+                <ul>
+                    <li>
+                        <span class="pwa-check"><i class="bi bi-check-lg"></i></span>
+                        <span><strong>隨身紀錄</strong>：隨時隨地快速登載日常血壓、心率與體重數據。</span>
+                    </li>
+                    <li>
+                        <span class="pwa-check"><i class="bi bi-check-lg"></i></span>
+                        <span><strong>離線存取</strong>：內置離線快取技術，網路中斷時仍可照常使用快取資料。</span>
+                    </li>
+                    <li>
+                        <span class="pwa-check"><i class="bi bi-check-lg"></i></span>
+                        <span><strong>無縫適配</strong>：高度適配主流智慧手機與平板，滑動順暢且不佔用手機空間。</span>
+                    </li>
+                    <li>
+                        <span class="pwa-check"><i class="bi bi-check-lg"></i></span>
+                        <span><strong>免商店下載</strong>：直接透過瀏覽器一鍵加入主畫面，無須經歷繁瑣下載。</span>
+                    </li>
+                </ul>
+                <p class="pwa-install-message" id="pwa-install-message" style="margin-top: 15px; text-align: center;" hidden>請使用瀏覽器選單的「加入主畫面」或「安裝應用程式」功能</p>
+            </div>
+
+            <div class="pwa-actions-row">
+                <button type="button" class="pwa-btn-install" id="pwa-install-button">立即安裝 App</button>
+                <a href="index.html" class="pwa-btn-back">返回登入頁面</a>
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <script>
+        let deferredPWAInstallPrompt = null;
+
+        function showPWAToast(message) {
+            const toast = document.getElementById("toast");
+            if (!toast) return;
+            toast.textContent = message;
+            toast.classList.add("show");
+            setTimeout(() => toast.classList.remove("show"), 2800);
+        }
+
+        window.addEventListener("beforeinstallprompt", (event) => {
+            event.preventDefault();
+            deferredPWAInstallPrompt = event;
+            const message = document.getElementById("pwa-install-message");
+            if (message) message.hidden = true;
+        });
+
+        window.addEventListener("DOMContentLoaded", () => {
+            const installButton = document.getElementById("pwa-install-button");
+            const message = document.getElementById("pwa-install-message");
+
+            installButton?.addEventListener("click", async () => {
+                if (!deferredPWAInstallPrompt) {
+                    if (message) message.hidden = false;
+                    showPWAToast("請使用瀏覽器選單的「加入主畫面」功能");
+                    return;
+                }
+
+                deferredPWAInstallPrompt.prompt();
+                await deferredPWAInstallPrompt.userChoice;
+                deferredPWAInstallPrompt = null;
+            });
+        });
+
+        if (window.location.protocol !== "file:") {
+            // Add manifest dynamically to prevent CORS error under file:// protocol
+            const link = document.createElement("link");
+            link.rel = "manifest";
+            link.href = "manifest.json";
+            document.head.appendChild(link);
+
+            // Register Service Worker
+            if ("serviceWorker" in navigator) {
+                window.addEventListener("load", () => {
+                    navigator.serviceWorker.register("./service-worker.js")
+                        .then(() => console.log("Service Worker registered"))
+                        .catch(err => console.error("Service Worker registration failed:", err));
+                });
+            }
+        } else {
+            console.log("Running locally via file:// protocol. PWA manifest and service worker skipped to prevent browser CORS and origin errors.");
+        }
+    </script>
+</body>
+</html>

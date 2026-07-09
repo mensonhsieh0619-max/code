@@ -277,6 +277,7 @@ function updateNavbar() {
     setText("nav-avatar", name.slice(0, 1).toUpperCase());
     setText("nav-role-label", ROLES[role] || "Guest");
     setText("nav-full-name", name);
+    setText("role-hero-name", name);
     updateNotifBadge();
     document.querySelectorAll("[data-section]").forEach((btn) => {
         const active = btn.dataset.section === currentSection;
@@ -410,7 +411,7 @@ function ensureProfileUI() {
         button.className = "nav-btn";
         button.dataset.section = "profile-section";
         button.type = "button";
-        button.textContent = "個人資料設定";
+        button.innerHTML = '<i class="bi bi-person-gear"></i> 個人資料設定';
         button.onclick = () => showSection("profile-section");
         const dashboardButton = navMenu.querySelector('[data-section="user-dashboard-section"]');
         dashboardButton?.insertAdjacentElement("afterend", button);
@@ -708,7 +709,7 @@ function registrationProgress(item) {
         <div class="registration-progress">
             ${steps.map(([label, done], index) => `
                 <div class="registration-step ${done ? "done" : ""} ${(!done && steps.slice(0, index).every(([, ok]) => ok)) ? "active" : ""}">
-                    <span>${done ? "✓" : index + 1}</span>
+                    <span>${done ? '<i class="bi bi-check-lg"></i>' : index + 1}</span>
                     <strong>${label}</strong>
                 </div>
             `).join("")}
@@ -976,7 +977,7 @@ function createLineChartJS(canvasId, { labels, datasets }) {
 function renderAdminCharts() {
     if (!chartjsReady()) return;
     const roleCounts = ["user", "coach", "nutritionist", "admin"].map((r) => state.accounts.filter((a) => a.role === r).length);
-    createDoughnutChart("chart-admin-roles", { labels: ["一般使用者", "健身教練", "營養師", "系統管理員"], data: roleCounts, colors: ["#0f766e", "#2563eb", "#db2777", "#f59e0b"] });
+    createDoughnutChart("chart-admin-roles", { labels: ["一般使用者", "健身教練", "營養師", "系統管理員"], data: roleCounts, colors: ["#0f766e", "#ea580c", "#16a34a", "#4f46e5"] });
 
     const regBuckets = { "待審核": 0, "審核通過": 0, "需補件": 0, "退件": 0 };
     state.registrations.forEach((r) => { if (r.status in regBuckets) regBuckets[r.status]++; });
@@ -1003,7 +1004,7 @@ function renderCoachCharts() {
     });
     createBarChartJS("chart-coach-achievement", {
         labels,
-        datasets: [{ label: "運動達成率 (%)", data: achievements, color: "#0f766e", colors: achievements.map((v) => v >= 100 ? "#16a34a" : v >= 50 ? "#f59e0b" : "#dc2626") }],
+        datasets: [{ label: "運動達成率 (%)", data: achievements, color: "#ea580c", colors: achievements.map((v) => v >= 100 ? "#16a34a" : v >= 50 ? "#f59e0b" : "#dc2626") }],
         yLabel: "%"
     });
 }
@@ -1393,7 +1394,7 @@ function renderCharts() {
     ]);
     const allRecords = recordsByAccount(activeUserId());
     drawLineChart("student-heart-chart", allRecords, [{ label: "心率", value: (r) => r.heartRate, unit: "bpm", color: "#db2777", status: heartRateStatus }]);
-    drawLineChart("nutrition-weight-chart", allRecords, [{ label: "體重", value: (r) => r.weight, unit: "kg", color: "#0f766e", status: () => "趨勢追蹤" }]);
+    drawLineChart("nutrition-weight-chart", allRecords, [{ label: "體重", value: (r) => r.weight, unit: "kg", color: "#16a34a", status: () => "趨勢追蹤" }]);
 }
 
 function drawLineChart(canvasId, records, seriesConfig) {
@@ -2369,15 +2370,15 @@ window.renderAll = renderAll;
 // Health Summary, AI Dashboard, and Health Report upgrade.
 // This final override is intentionally scoped to the user health workflow only.
 const AI_HEALTH_ICONS = {
-    diet: "🍽",
-    exercise: "🏃",
-    sleep: "🌙",
-    water: "💧",
-    medical: "⚕",
+    diet: '<i class="bi bi-fork-knife"></i>',
+    exercise: '<i class="bi bi-person-walking"></i>',
+    sleep: '<i class="bi bi-moon-stars-fill"></i>',
+    water: '<i class="bi bi-droplet-fill"></i>',
+    medical: '<i class="bi bi-heart-pulse-fill"></i>',
     bmi: "BMI",
     bp: "BP",
     heart: "HR",
-    steps: "👣",
+    steps: '<i class="bi bi-activity"></i>',
     stress: "ST"
 };
 
@@ -2479,40 +2480,6 @@ function ensureHealthFeatureUI() {
     setInputValue("health-date", `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`);
     syncHealthHeightInput(true);
     updateBMIPreview();
-}
-
-function ensureHealthReportSection() {
-    const pageContent = document.querySelector(".page-content");
-    if (!pageContent || document.getElementById("health-report-section")) return;
-    const section = document.createElement("section");
-    section.id = "health-report-section";
-    section.className = "content-section";
-    section.innerHTML = `
-        <div class="ai-gradient-header">
-            <div>
-                <span>Health Report</span>
-                <h2>健康風險報告</h2>
-                <p>整合個人資料、健康摘要、AI 分析、FHIR 摘要、最近紀錄、趨勢、風險與授權紀錄。</p>
-            </div>
-            <button type="button" class="secondary-button print-hide" onclick="downloadHealthReport()">下載健康報告</button>
-        </div>
-        <div id="health-report-panel"></div>`;
-    const fhirSection = document.getElementById("fhir-viewer-section");
-    safeInsertBefore(pageContent, section, fhirSection || pageContent.lastElementChild);
-}
-
-function ensureHealthReportNav() {
-    const navMenu = document.getElementById("nav-menu");
-    if (!navMenu || navMenu.querySelector('[data-section="health-report-section"]')) return;
-    const aiDropdown = Array.from(navMenu.querySelectorAll(".nav-dropdown")).find((node) => node.querySelector('[data-section="ai-health-section"]'));
-    const button = document.createElement("button");
-    button.className = "nav-dropdown-item";
-    button.dataset.section = "health-report-section";
-    button.type = "button";
-    button.textContent = "健康風險報告";
-    button.onclick = () => showSection("health-report-section");
-    if (aiDropdown) safeInsertBefore(aiDropdown, button, aiDropdown.querySelector('[data-section="fhir-viewer-section"]'));
-    else navMenu.appendChild(button);
 }
 
 function ensureAIAnalysisMarkup() {
@@ -2722,14 +2689,14 @@ function renderAIAnalysis() {
         healthDetailItem("運動總時間", `${analysis.trendStats.totalExerciseMinutes} 分鐘`),
         healthDetailItem("異常次數", `${analysis.trendStats.abnormalCount} 次`)
     ].join("");
-    document.getElementById("ai-timeline").innerHTML = analysis.timeline.map((item) => `<div class="ai-timeline-item"><span>${escapeHTML(item.time)}</span><p>✔ ${escapeHTML(item.text)}</p></div>`).join("");
+    document.getElementById("ai-timeline").innerHTML = analysis.timeline.map((item) => `<div class="ai-timeline-item"><span>${escapeHTML(item.time)}</span><p><i class="bi bi-check-lg"></i> ${escapeHTML(item.text)}</p></div>`).join("");
     drawRadarChart("ai-risk-radar", ["BMI", "Blood Pressure", "Heart Rate", "Exercise", "Sleep", "Stress"], analysis.radar);
     renderHealthReport();
 }
 
 function aiKpiCard(item) {
     return `<article class="ai-kpi-card">
-        <span class="ai-card-icon">${escapeHTML(item.icon)}</span>
+        <span class="ai-card-icon">${item.icon}</span>
         <div><small>${escapeHTML(item.label)}</small><strong>${escapeHTML(item.value)}</strong></div>
         <em class="ai-status-badge ${item.status.className}">${escapeHTML(item.status.label)}</em>
     </article>`;
@@ -2868,7 +2835,7 @@ function showHealthSummaryModal(record) {
     modal.innerHTML = `
         <div class="registration-modal-panel health-summary-card">
             <button type="button" class="modal-close-button" onclick="closeHealthSummaryModal()">x</button>
-            <div class="summary-success">✅ 健康資料已成功儲存</div>
+            <div class="summary-success"><i class="bi bi-check-circle-fill"></i> 健康資料已成功儲存</div>
             <h3>本次健康摘要</h3>
             <div class="summary-list">
                 ${summaryRow("BMI", record.bmi, bmi.label, bmi.className)}
@@ -2918,45 +2885,10 @@ function renderHealthRecords() {
     setHTML("health-record-table-body", rows || `<tr><td colspan="10" class="empty">尚無健康資料</td></tr>`);
 }
 
-function renderHealthReport() {
-    ensureHealthReportSection();
-    const panel = document.getElementById("health-report-panel");
-    if (!panel) return;
-    ensureHealthStore();
-    const account = state.accounts.find((item) => item.id === activeUserId()) || {};
-    const records = recordsByAccount(activeUserId()).map(normalizeHealthRecord);
-    const latest = records[records.length - 1];
-    const analysis = runAIAnalysis(activeUserId());
-    const fhir = generateFHIRBundle(activeUserId());
-    const auths = (state.authorizations || []).filter((item) => authPatientId(item) === activeUserId()).slice(-5).reverse();
-    panel.innerHTML = `
-        <div class="health-report-section">
-            <article class="health-report-card">${reportTitle("個人資料")}${healthDetailItem("姓名", account.name || "--")}${healthDetailItem("Email", account.email || "--")}${healthDetailItem("身高", `${getUserHeight()} cm`)}</article>
-            <article class="health-report-card">${reportTitle("健康摘要")}${latest ? `${healthDetailItem("BMI", `${latest.bmi} ${bmiCategory(latest.bmi)}`)}${healthDetailItem("血壓", `${latest.systolic}/${latest.diastolic} mmHg`)}${healthDetailItem("心率", `${latest.heartRate} bpm`)}` : "<p>尚無健康資料。</p>"}</article>
-            <article class="health-report-card wide">${reportTitle("AI分析")}<p>${escapeHTML(analysis.summary)}</p><div class="ai-risk-chip-list">${analysis.riskTags.map((tag) => `<span class="ai-chip">${escapeHTML(tag)}</span>`).join("") || "<span class=\"ai-chip good\">目前無明顯風險</span>"}</div></article>
-            <article class="health-report-card">${reportTitle("FHIR摘要")}${healthDetailItem("Resource Type", fhir.resourceType)}${healthDetailItem("Entries", String(fhir.entry?.length || 0))}${healthDetailItem("Timestamp", fhir.timestamp || "--")}</article>
-            <article class="health-report-card wide">${reportTitle("最近健康紀錄")}<div class="health-record-table-wrapper"><table class="health-record-table"><thead><tr><th>日期</th><th>BMI</th><th>血壓</th><th>心率</th><th>步數</th><th>睡眠</th></tr></thead><tbody>${records.slice(-5).reverse().map((r) => `<tr><td>${escapeHTML(r.date)}</td><td>${escapeHTML(r.bmi)}</td><td>${escapeHTML(`${r.systolic}/${r.diastolic}`)}</td><td>${escapeHTML(r.heartRate)}</td><td>${Number(r.steps || 0).toLocaleString()}</td><td>${escapeHTML(r.sleep)}</td></tr>`).join("") || "<tr><td colspan=\"6\">尚無資料</td></tr>"}</tbody></table></div></article>
-            <article class="health-report-card">${reportTitle("健康趨勢")}${healthDetailItem("平均BMI", analysis.trendStats.averageBMI)}${healthDetailItem("平均血壓", analysis.trendStats.averageBloodPressure)}${healthDetailItem("運動總時間", `${analysis.trendStats.totalExerciseMinutes} 分鐘`)}</article>
-            <article class="health-report-card">${reportTitle("風險分析")}${healthDetailItem("健康等級", analysis.riskLevel)}${healthDetailItem("異常次數", `${analysis.trendStats.abnormalCount} 次`)}${healthDetailItem("AI分數", `${analysis.score}/100`)}</article>
-            <article class="health-report-card wide">${reportTitle("授權紀錄")}${auths.map((a) => `<div class="report-auth-row"><strong>${escapeHTML(a.targetName || a.targetRole || "--")}</strong><span>${escapeHTML(a.status || "--")} · ${escapeHTML(a.createdAt || "--")}</span></div>`).join("") || "<p>尚無授權紀錄。</p>"}</article>
-        </div>`;
-}
-
-function reportTitle(title) {
-    return `<h3>${escapeHTML(title)}</h3>`;
-}
-
-function downloadHealthReport() {
-    renderHealthReport();
-    window.print();
-}
-
 function renderAll() {
     ensureHealthStore();
     ensureProfileUI();
     ensureHealthFeatureUI();
-    ensureHealthReportSection();
-    ensureHealthReportNav();
     initCustomSelects();
     refreshNavigationUI();
     if (typeof updateUserDisplay === "function") updateUserDisplay();
@@ -2981,14 +2913,11 @@ function renderAll() {
 }
 
 window.ensureHealthFeatureUI = ensureHealthFeatureUI;
-window.ensureHealthReportSection = ensureHealthReportSection;
-window.ensureHealthReportNav = ensureHealthReportNav;
 window.runAIAnalysis = runAIAnalysis;
 window.renderAIAnalysis = renderAIAnalysis;
 window.renderAI = renderAIAnalysis;
 window.renderAIHealth = renderAIAnalysis;
 window.renderHealthReport = renderHealthReport;
-window.downloadHealthReport = downloadHealthReport;
 window.submitHealthData = submitHealthData;
 window.showHealthSummaryModal = showHealthSummaryModal;
 window.closeHealthSummaryModal = closeHealthSummaryModal;
@@ -3086,17 +3015,7 @@ function ensureWearableImportUI() {
     const pageContent = document.querySelector(".page-content");
     if (!pageContent) return;
 
-    const navMenu = document.getElementById("nav-menu");
-    if (navMenu && !navMenu.querySelector('[data-section="wearable-import-section"]')) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "nav-btn";
-        button.dataset.section = "wearable-import-section";
-        button.textContent = "穿戴裝置匯入";
-        button.onclick = () => showSection("wearable-import-section");
-        const notificationButton = navMenu.querySelector('[data-section="notification-section"]');
-        safeInsertBefore(navMenu, button, notificationButton || null);
-    }
+    // Nav entry retired: 穿戴裝置匯入 is reached only via the floating button (.wearable-float-button).
 
     if (!document.getElementById("wearable-import-section")) {
         const section = document.createElement("section");
@@ -3414,30 +3333,7 @@ function getSecurityStats() {
 }
 
 function ensureSecurityCenterUI() {
-    const role = getCurrentRole();
-    if (!["user", "admin"].includes(role)) return;
-    const pageContent = document.querySelector(".page-content");
-    if (!pageContent) return;
-
-    const navMenu = document.getElementById("nav-menu");
-    if (navMenu && !navMenu.querySelector('[data-section="security-center-section"]')) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "nav-btn";
-        button.dataset.section = "security-center-section";
-        button.textContent = "資料安全";
-        button.onclick = () => showSection("security-center-section");
-        const before = navMenu.querySelector('[data-section="system-setting-section"]') || navMenu.querySelector('[data-section="notification-section"]');
-        safeInsertBefore(navMenu, button, before || null);
-    }
-
-    if (!document.getElementById("security-center-section")) {
-        const section = document.createElement("section");
-        section.id = "security-center-section";
-        section.className = "content-section";
-        const before = document.getElementById("system-setting-section") || document.getElementById("notification-section");
-        safeInsertBefore(pageContent, section, before || null);
-    }
+    // 資料安全 feature retired: no longer injected into any role's nav or page.
 }
 
 function securitySamplePayload() {
@@ -3769,9 +3665,9 @@ function validateFHIRBundle() {
 }
 
 function fhirStatusIcon(severity) {
-    if (severity === "pass") return '<span class="fhir-result-icon pass">✓</span>';
-    if (severity === "warning") return '<span class="fhir-result-icon warning">!</span>';
-    return '<span class="fhir-result-icon error">×</span>';
+    if (severity === "pass") return '<span class="fhir-result-icon pass"><i class="bi bi-check-lg"></i></span>';
+    if (severity === "warning") return '<span class="fhir-result-icon warning"><i class="bi bi-exclamation-lg"></i></span>';
+    return '<span class="fhir-result-icon error"><i class="bi bi-x-lg"></i></span>';
 }
 
 function renderFHIRValidation() {
@@ -3794,17 +3690,17 @@ function renderFHIRValidation() {
 
         <div class="fhir-flow-card">
             <div class="fhir-flow-node">健康資料</div>
-            <div class="fhir-flow-arrow">→</div>
+            <div class="fhir-flow-arrow"><i class="bi bi-arrow-right"></i></div>
             <div class="fhir-flow-node">FHIR Converter</div>
-            <div class="fhir-flow-arrow">→</div>
+            <div class="fhir-flow-arrow"><i class="bi bi-arrow-right"></i></div>
             <div class="fhir-flow-node">Bundle</div>
-            <div class="fhir-flow-arrow">→</div>
+            <div class="fhir-flow-arrow"><i class="bi bi-arrow-right"></i></div>
             <div class="fhir-flow-node">Validator</div>
-            <div class="fhir-flow-arrow">→</div>
+            <div class="fhir-flow-arrow"><i class="bi bi-arrow-right"></i></div>
             <div class="fhir-flow-node">HAPI FHIR Server</div>
-            <div class="fhir-flow-arrow">→</div>
+            <div class="fhir-flow-arrow"><i class="bi bi-arrow-right"></i></div>
             <div class="fhir-flow-node">Read Resource</div>
-            <div class="fhir-flow-arrow">→</div>
+            <div class="fhir-flow-arrow"><i class="bi bi-arrow-right"></i></div>
             <div class="fhir-flow-node">顯示結果</div>
         </div>
 
@@ -4027,7 +3923,7 @@ function clearFhirSyncLogs() {
 
 function ensureFHIRValidatorUI() {
     const role = getCurrentRole();
-    if (!["user", "admin"].includes(role)) return;
+    if (!["admin"].includes(role)) return;
     const pageContent = document.querySelector(".page-content");
     if (!pageContent) return;
     const navMenu = document.getElementById("nav-menu");
@@ -4036,7 +3932,7 @@ function ensureFHIRValidatorUI() {
         button.type = "button";
         button.className = "nav-btn";
         button.dataset.section = "fhir-validator-section";
-        button.textContent = "FHIR 驗證";
+        button.innerHTML = '<i class="bi bi-patch-check-fill"></i> FHIR 驗證';
         button.onclick = () => showSection("fhir-validator-section");
         const before = navMenu.querySelector('[data-section="security-center-section"]') || navMenu.querySelector('[data-section="notification-section"]') || navMenu.querySelector('[data-section="system-setting-section"]');
         safeInsertBefore(navMenu, button, before || null);
@@ -4183,10 +4079,10 @@ function notificationTypeLabel(type) {
 }
 
 function notificationIcon(item) {
-    if (item.level === "danger") return "!";
-    if (item.level === "warning") return "!";
-    if (item.level === "success") return "✓";
-    return "i";
+    if (item.level === "danger") return '<i class="bi bi-exclamation-lg"></i>';
+    if (item.level === "warning") return '<i class="bi bi-exclamation-lg"></i>';
+    if (item.level === "success") return '<i class="bi bi-check-lg"></i>';
+    return '<i class="bi bi-info-lg"></i>';
 }
 
 function renderNotifications() {
@@ -4495,9 +4391,9 @@ function predictionScore({ bmi, systolic, diastolic, exercise, sleep, stress, di
 }
 
 function trendText(trend) {
-    if (trend === "up") return "↗";
-    if (trend === "down") return "↘";
-    return "→";
+    if (trend === "up") return '<i class="bi bi-graph-up-arrow"></i>';
+    if (trend === "down") return '<i class="bi bi-graph-down-arrow"></i>';
+    return '<i class="bi bi-arrow-right"></i>';
 }
 
 function runHealthPrediction() {
@@ -4604,7 +4500,7 @@ function predictionChangePercent(item) {
 
 function ensureAIPredictionUI() {
     const role = getCurrentRole();
-    if (!["user", "coach", "nutritionist", "admin"].includes(role)) return;
+    if (!["user"].includes(role)) return;
     const pageContent = document.querySelector(".page-content");
     if (!pageContent) return;
     const navMenu = document.getElementById("nav-menu");
@@ -4819,6 +4715,7 @@ function generateHealthReport() {
 }
 
 function ensureHealthReportDownloadSection() {
+    if (getCurrentRole() !== "user") return null;
     const pageContent = document.querySelector(".page-content");
     if (!pageContent) return null;
     let section = document.getElementById("health-report-section");
@@ -4835,7 +4732,7 @@ function ensureHealthReportDownloadSection() {
         button.type = "button";
         button.className = "nav-btn";
         button.dataset.section = "health-report-section";
-        button.textContent = "健康報告下載";
+        button.innerHTML = '<i class="bi bi-file-earmark-pdf"></i> 健康報告下載';
         button.onclick = () => showSection("health-report-section");
         const before = navMenu.querySelector('[data-section="ai-prediction-section"]') || navMenu.querySelector('[data-section="fhir-validator-section"]') || navMenu.querySelector('[data-section="notification-section"]');
         safeInsertBefore(navMenu, button, before || null);
@@ -5146,7 +5043,7 @@ function generateAssistantReply(question) {
 
 function assistantShellHTML() {
     return `
-        <button type="button" class="ai-assistant-button" id="ai-assistant-button" onclick="toggleAssistantPanel()">AI 助理</button>
+        <button type="button" class="ai-assistant-button" id="ai-assistant-button" onclick="toggleAssistantPanel()" aria-label="AI 助理" title="AI 助理"><i class="bi bi-robot"></i></button>
         <section class="ai-assistant-panel" id="ai-assistant-panel" aria-live="polite">
             <div class="ai-assistant-header">
                 <div><h2>AI 健康助理</h2><p>可協助解讀健康資料、FHIR、AI 分析與授權權限。</p></div>
@@ -5815,29 +5712,7 @@ function renderAdminCareTeam() {
 }
 
 function ensureCareTeamUI() {
-    const role = getCurrentRole();
-    if (!["user", "coach", "nutritionist", "admin"].includes(role)) return;
-    const pageContent = document.querySelector(".page-content");
-    if (!pageContent) return;
-    let section = document.getElementById("care-team-section");
-    if (!section) {
-        section = document.createElement("section");
-        section.id = "care-team-section";
-        section.className = "content-section";
-        const before = document.getElementById("notification-section") || pageContent.lastElementChild;
-        safeInsertBefore(pageContent, section, before || null);
-    }
-    const navMenu = document.getElementById("nav-menu");
-    if (navMenu && !navMenu.querySelector('[data-section="care-team-section"]')) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "nav-btn";
-        button.dataset.section = "care-team-section";
-        button.textContent = "Care Team";
-        button.onclick = () => showSection("care-team-section");
-        const before = navMenu.querySelector('[data-section="notification-section"]');
-        safeInsertBefore(navMenu, button, before || null);
-    }
+    // Care Team 導覽項目已停用：不再插入任何角色的導覽列或頁面。
 }
 
 function renderCareTeam() {

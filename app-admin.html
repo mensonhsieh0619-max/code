@@ -8,8 +8,9 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="vendor/bootstrap-icons/bootstrap-icons.css" />
     <link rel="manifest" href="manifest.json" />
-    <meta name="theme-color" content="#0f766e" />
+    <meta name="theme-color" content="#4f46e5" />
     <script>
         if (localStorage.getItem("ai_health_platform_theme") === "dark") document.documentElement.dataset.theme = "dark";
     </script>
@@ -24,7 +25,7 @@
         })();
     </script>
 </head>
-<body class="page-body">
+<body class="page-body role-admin">
     <!-- Navbar -->
     <nav class="navbar">
         <div class="nav-brand" onclick="showSection('admin-dashboard-section')" style="cursor:pointer">
@@ -42,38 +43,27 @@
             </svg>
         </button>
         <div class="nav-menu" id="nav-menu">
-            <button class="nav-btn" data-section="admin-dashboard-section" onclick="showSection('admin-dashboard-section')">首頁</button>
+            <button class="nav-btn" data-section="admin-dashboard-section" onclick="showSection('admin-dashboard-section')"><i class="bi bi-house-door-fill"></i> 首頁</button>
             <div class="nav-dropdown-wrap">
-                <button class="nav-btn" onclick="toggleDropdown(this)">帳號管理 <span class="nav-caret">▾</span></button>
+                <button class="nav-btn" onclick="toggleDropdown(this)"><i class="bi bi-person-badge-fill"></i> 帳號管理 <span class="nav-caret">▾</span></button>
                 <div class="nav-dropdown">
-                    <button class="nav-dropdown-item" data-section="account-management-section" onclick="showSection('account-management-section')">帳號列表</button>
-                    <button class="nav-dropdown-item" data-section="user-management-section" onclick="showSection('user-management-section')">使用者資料</button>
+                    <button class="nav-dropdown-item" data-section="account-management-section" onclick="showSection('account-management-section')"><i class="bi bi-list-ul"></i> 帳號列表</button>
+                    <button class="nav-dropdown-item" data-section="user-management-section" onclick="showSection('user-management-section')"><i class="bi bi-person-lines-fill"></i> 使用者資料</button>
                 </div>
             </div>
             <div class="nav-dropdown-wrap">
-                <button class="nav-btn" onclick="toggleDropdown(this)">FHIR <span class="nav-caret">▾</span></button>
+                <button class="nav-btn" onclick="toggleDropdown(this)"><i class="bi bi-file-earmark-medical"></i> FHIR <span class="nav-caret">▾</span></button>
                 <div class="nav-dropdown">
-                    <button class="nav-dropdown-item" data-section="fhir-record-section" onclick="showSection('fhir-record-section')">FHIR 紀錄</button>
-                    <button class="nav-dropdown-item" data-section="observation-record-section" onclick="showSection('observation-record-section')">Observation 紀錄</button>
-                    <button class="nav-dropdown-item" data-section="authorization-record-section" onclick="showSection('authorization-record-section')">授權紀錄</button>
-                    <button class="nav-dropdown-item" data-section="blockchain-section" onclick="showSection('blockchain-section')">區塊鏈紀錄</button>
+                    <button class="nav-dropdown-item" data-section="fhir-record-section" onclick="showSection('fhir-record-section')"><i class="bi bi-file-earmark-code"></i> FHIR 紀錄</button>
+                    <button class="nav-dropdown-item" data-section="observation-record-section" onclick="showSection('observation-record-section')"><i class="bi bi-clipboard2-pulse"></i> Observation 紀錄</button>
+                    <button class="nav-dropdown-item" data-section="authorization-record-section" onclick="showSection('authorization-record-section')"><i class="bi bi-shield-check"></i> 授權紀錄</button>
+                    <button class="nav-dropdown-item" data-section="blockchain-section" onclick="showSection('blockchain-section')"><i class="bi bi-link-45deg"></i> 區塊鏈紀錄</button>
                 </div>
             </div>
-            <div class="nav-dropdown-wrap">
-                <button class="nav-btn" onclick="toggleDropdown(this)">競賽 <span class="nav-caret">▾</span></button>
-                <div class="nav-dropdown">
-                    <button class="nav-dropdown-item" data-section="registration-list-section" onclick="showSection('registration-list-section')">報名列表</button>
-                    <button class="nav-dropdown-item" data-section="registration-review-section" onclick="showSection('registration-review-section')">報名審核</button>
-                </div>
-            </div>
-            <button class="nav-btn" data-section="notification-section" onclick="showSection('notification-section')">
-                通知
-                <span class="nav-notif-badge hidden" id="nav-notif-count"></span>
-            </button>
-            <button class="nav-btn" data-section="system-setting-section" onclick="showSection('system-setting-section')">系統設定</button>
+            <button class="nav-btn" data-section="system-setting-section" onclick="showSection('system-setting-section')"><i class="bi bi-gear-fill"></i> 系統設定</button>
         </div>
         <div class="nav-right">
-            <button class="nav-notif-btn dark-mode-toggle" onclick="toggleDarkMode()" title="切換深色模式" aria-label="切換深色模式" aria-pressed="false">🌙</button>
+            <button class="nav-notif-btn dark-mode-toggle" onclick="toggleDarkMode()" title="切換深色模式" aria-label="切換深色模式" aria-pressed="false"><i class="bi bi-moon-stars-fill"></i></button>
             <button class="nav-notif-btn" onclick="showSection('notification-section')" title="通知" aria-label="通知">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
@@ -102,9 +92,16 @@
     <div class="page-content">
         <!-- Dashboard -->
         <section id="admin-dashboard-section" class="content-section active">
-            <h2 class="section-title">系統管理員首頁</h2>
+            <div class="role-hero">
+                <div class="role-hero-text">
+                    <p class="role-hero-eyebrow">歡迎回來</p>
+                    <h2><span id="role-hero-name">管理員</span>，系統目前運作正常</h2>
+                    <p>掌握帳號、FHIR 資源與報名審核狀態，一站管理整個平台。</p>
+                </div>
+                <div class="role-hero-media" aria-hidden="true">背景圖片預留位置</div>
+            </div>
             <div id="admin-dashboard-cards" class="kpi-grid"></div>
-            <div class="chart-row-4" style="margin-top:24px">
+            <div class="chart-row" style="margin-top:24px">
                 <div class="chart-box">
                     <div class="chart-box-title">帳號角色分佈</div>
                     <canvas id="chart-admin-roles" height="180" role="img" aria-label="帳號角色分佈圖"></canvas>
@@ -113,13 +110,16 @@
                     <div class="chart-box-title">報名審核狀態</div>
                     <canvas id="chart-admin-reg" height="180" role="img" aria-label="報名審核狀態圖"></canvas>
                 </div>
-                <div class="chart-box">
-                    <div class="chart-box-title">FHIR 資源統計</div>
-                    <canvas id="chart-admin-fhir" height="180" role="img" aria-label="FHIR 資源統計圖"></canvas>
-                </div>
-                <div class="chart-box">
-                    <div class="chart-box-title">授權有效狀態</div>
-                    <canvas id="chart-admin-auth" height="180" role="img" aria-label="授權有效狀態圖"></canvas>
+            </div>
+            <div class="card" style="margin-top:24px">
+                <h3>快速前往</h3>
+                <div class="quick-access-grid">
+                    <button type="button" class="secondary-button" onclick="showSection('fhir-record-section')"><i class="bi bi-file-earmark-code"></i> FHIR 紀錄</button>
+                    <button type="button" class="secondary-button" onclick="showSection('observation-record-section')"><i class="bi bi-clipboard2-pulse"></i> Observation 紀錄</button>
+                    <button type="button" class="secondary-button" onclick="showSection('authorization-record-section')"><i class="bi bi-shield-check"></i> 授權紀錄</button>
+                    <button type="button" class="secondary-button" onclick="showSection('blockchain-section')"><i class="bi bi-link-45deg"></i> 區塊鏈紀錄</button>
+                    <button type="button" class="secondary-button" onclick="showSection('registration-list-section')"><i class="bi bi-list-ul"></i> 報名列表</button>
+                    <button type="button" class="secondary-button" onclick="showSection('registration-review-section')"><i class="bi bi-check2-square"></i> 報名審核</button>
                 </div>
             </div>
             <div class="card" style="margin-top:24px">
@@ -157,6 +157,10 @@
         <!-- FHIR Record -->
         <section id="fhir-record-section" class="content-section">
             <h2 class="section-title">FHIR 紀錄</h2>
+            <div class="chart-box" style="margin-bottom:20px">
+                <div class="chart-box-title">FHIR 資源統計</div>
+                <canvas id="chart-admin-fhir" height="180" role="img" aria-label="FHIR 資源統計圖"></canvas>
+            </div>
             <div id="fhir-record-list"></div>
         </section>
 
@@ -169,6 +173,10 @@
         <!-- Authorization Record -->
         <section id="authorization-record-section" class="content-section">
             <h2 class="section-title">授權紀錄</h2>
+            <div class="chart-box" style="margin-bottom:20px">
+                <div class="chart-box-title">授權有效狀態</div>
+                <canvas id="chart-admin-auth" height="180" role="img" aria-label="授權有效狀態圖"></canvas>
+            </div>
             <div class="card table-card">
                 <table>
                     <thead>
