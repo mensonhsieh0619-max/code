@@ -1,0 +1,228 @@
+====================================================================
+AI Health Platform — 管理員端 (app-admin.html) 重新實作 Prompt
+產生日期：2026-07-10（2026-07-10 修訂：套用 20 項改善並已實作完成）
+用途：依此規格從零產出管理員端頁面與其角色專屬渲染邏輯。
+狀態：本版本已依規格實作完成 app-admin.html，並對 shared.js 做了對應的最小必要修改
+（見文末【本次實作備註】）。若要重新產生此頁面，此規格仍可作為完整依據。
+====================================================================
+
+────────────────────────────────────────────────────────────────
+【專案背景】
+────────────────────────────────────────────────────────────────
+
+這是一個 FHIR 健康競賽的示範平台，純前端、無建置步驟、無框架，共 4 個角色頁面
+（使用者／教練／營養師／管理員）+ 1 個登入頁 index.html，全部共用同一個
+`shared.js`（核心引擎：帳號、健康資料、AI 分析、FHIR Bundle 產生、授權機制、
+圖表、通知）與 `style.css`。你只需要負責「管理員端」這一個角色頁面
+（`app-admin.html`）與它專屬的渲染／互動邏輯，不要重新實作已存在於 shared.js
+的核心功能（登入、FHIR Bundle 產生器、授權驗證邏輯等），直接呼叫它們。
+
+────────────────────────────────────────────────────────────────
+【你必須沿用、不要重新定義的共用基礎建設】
+────────────────────────────────────────────────────────────────
+
+1. 頁首標準結構（每個角色頁共用同一套 shell，只有品牌色與導覽項目不同）：
+   - `<head>` 內含 Google Fonts 預連結、`style.css`、`vendor/bootstrap-icons/bootstrap-icons.css`、
+     `manifest.json`、`<meta name="theme-color" content="#4f46e5">`（管理員端專屬色，靛藍色）
+   - 深色模式初始化 inline script：
+     `if (localStorage.getItem("ai_health_platform_theme") === "dark") document.documentElement.dataset.theme = "dark";`
+   - 登入守衛 inline script（角色寫死為 "admin"）：
+     ```
+     (function () {
+         try {
+             const s = JSON.parse(localStorage.getItem("ai_health_platform_login_state_v2") || "{}");
+             if (s.loginAt && Date.now() - s.loginAt > 12 * 60 * 60 * 1000) { window.location.href = "index.html"; }
+             if (!s.currentAccount && !s.demoMode) { window.location.href = "index.html"; }
+             if (s.role !== "admin") { window.location.href = "index.html"; }
+         } catch (e) { window.location.href = "index.html"; }
+     })();
+     ```
+   - `<body class="page-body role-admin">`
+   - Navbar：`nav-brand`（圖示 AI + 「AI Health」+ 副標「系統管理員」）、漢堡選單按鈕、
+     `nav-menu` 導覽項目（見下方導覽結構）、右側深色模式切換按鈕、通知鈴鐺按鈕（內含
+     `<span class="nav-notif-badge hidden" id="nav-notif-count-icon">` 未讀數徽章，由 shared.js
+     的 `updateNotifBadge()` 自動更新）、使用者選單（頭像 A、姓名、角色標籤、登出按鈕 `logoutAccount()`）
+   - 頁尾共用元件：`#chart-tooltip`、`#toast`
+   - 載入順序：Chart.js CDN → `shared.js`（**不需要**載入 qrcode-generator，管理員端沒有 QR 功能）
+     → 初始化 IIFE：`await initDefaultAccounts(); saveState(); showSection('admin-dashboard-section');`
+
+2. 已存在於 shared.js、可直接呼叫的函式（不要重新宣告同名函式）：
+   - `getCurrentRole()`、`currentAccount()`、`loadState()` / `saveState()`
+   - `escapeHTML(str)` — 任何要寫進 innerHTML 的字串都必須先過這個函式（驗收清單硬性項目，
+     帳號管理表格會顯示使用者輸入的姓名/單位/手機，特別要注意）
+   - `nowText()`、`hashText(text)` — 區塊鏈模擬雜湊
+   - `generateFHIRBundle(accountId)` — 產生 FHIR R4 Bundle，管理員端用來統計/展示 FHIR 資源
+   - `validateFHIRBundle()` — FHIR Bundle 驗證，回傳通過數/警告數/錯誤數與逐項結果
+   - `toggleAccount(id)` — 帳號啟用/停用的既有函式（會彈確認對話框、切換 `account.status`、
+     `saveState()` 後 `renderAll()`），帳號管理頁的啟用/停用按鈕**直接呼叫這個既有函式**，
+     不要自己重新寫一個
+   - `resetDemoData()` — 「重置 Demo 資料」按鈕直接呼叫
+   - `addNotification(title, message, type, level, relatedSection, sourceId)` — 通知系統目前
+     生效的完整簽名
+   - `showSection(sectionId)`、`showToast(message)`、`toggleDropdown(el)`、`toggleNavMenu()`、`toggleUserMenu()`、`toggleDarkMode()`
+   - `logoutAccount()`、`loginAccount(event)`、`demoLogin(role)`、`initDefaultAccounts()`
+   - `setHTML(id, html)`、`kpi(title, value, caption)`
+   - FHIR 驗證中心已經整段既有實作完成（`renderFHIRValidation()`），會自動重寫
+     `#fhir-validator-section` 的完整內容（含標題、驗證結果清單、HAPI 同步卡片、JSON 預覽、
+     同步紀錄表），這個 section 在靜態 HTML 裡**只需要放一個空容器**，不要手刻內容。
+     裡面用到的既有函式：`testHapiConnection()`／`uploadBundleToHapi()`／`readHapiPatient()`／
+     `clearFhirSyncLogs()`／`copyFHIRJson()`／`downloadFHIRJson()`（注意跟使用者端已刪除的
+     `copyFHIR()`/`downloadFHIR()` 是完全不同的兩組函式，不要混用）
+   - 圖表一律使用 Chart.js（`new Chart(canvas, {...})`，透過 `createDoughnutChart()` /
+     `createBarChartJS()` 呼叫），不要手刻 Canvas 繪圖邏輯
+
+3. state 資料結構（讀寫都要透過 `state` 物件 + `saveState()`）：
+   ```
+   state.accounts          // 所有帳號（含啟用/停用狀態），管理員端唯一能編輯這個狀態欄位的角色
+   state.healthRecords     // 全平台健康觀測值，管理員端只做統計，不做個別病患建議
+   state.authorizations    // 全平台授權分享紀錄
+   state.blockchainLogs    // 模擬區塊鏈存證
+   state.notifications
+   state.currentAccount, state.role, state.demoMode, state.loginAt
+   ```
+   管理員端**不可**讀寫 `state.trainingRecords`、`state.nutritionRecords` 的內容細節（那是教練/營養師的專業紀錄，
+   管理員只在系統層級統計數量，不介入個別建議內容）。
+
+4. 資料慣例：
+   - Timestamp 一律 `YYYY-MM-DD HH:mm`
+   - Hash 值格式沿用既有 `0x` 開頭大寫十六進位字串風格
+   - 區塊鏈頁面必須保留誠實聲明：「此頁面為模擬展示：雜湊值以簡易演算法產生，紀錄仍儲存在瀏覽器
+     localStorage 中，並非真實區塊鏈網路，不具備防竄改保證。」
+
+────────────────────────────────────────────────────────────────
+【管理員角色定位與核心原則】
+────────────────────────────────────────────────────────────────
+
+管理員是平台的系統維運者：管理帳號、監控 FHIR／區塊鏈技術資源、維護系統設定。
+
+**核心原則：管理員 = 系統／技術層，不涉入個別病患的健康建議**。管理員頁面不應該出現任何
+「個人健康建議 / AI 風險預測 / 健康報告下載」這類以單一病患為中心的功能，那些是使用者端的內容。
+
+**一份內容只能有一個入口**：舊版「帳號列表」與「使用者資料」其實是同一份 `state.accounts`
+只是欄位切一半，這次合併成一張表（姓名／帳號／Email／角色／單位／手機／狀態／操作）。
+「Observation 紀錄」舊版只有 3 個 KPI 數字，資訊量撐不起獨立頁面，這次併入「FHIR 紀錄」
+頁面最上方當附加 KPI，不再是獨立導覽項目。
+
+────────────────────────────────────────────────────────────────
+【導覽結構（5 個一級群組，展開後共 7 個可點擊入口）】
+────────────────────────────────────────────────────────────────
+
+nav-menu 由左到右：
+1. 首頁 → `admin-dashboard-section`
+2. 帳號管理 → `account-management-section`（合併後的新頁面，取代舊的「帳號列表」+「使用者資料」）
+3. FHIR ▾（下拉選單）
+   - FHIR 紀錄 → `fhir-record-section`（含原本「Observation 紀錄」的 3 個 KPI，合併進本頁最上方）
+   - 授權紀錄 → `authorization-record-section`
+   - 區塊鏈紀錄 → `blockchain-section`
+4. FHIR 驗證中心 → `fhir-validator-section`
+5. 系統設定 → `system-setting-section`
+
+nav-right：深色模式切換、通知鈴鐺（`notification-section`，含未讀徽章）、使用者選單（登出）
+
+────────────────────────────────────────────────────────────────
+【逐頁規格】
+────────────────────────────────────────────────────────────────
+
+### 1. 首頁（admin-dashboard-section）
+- role-hero 橫幅：歡迎文字 + 副標
+- KPI 卡片列（`#admin-dashboard-cards`）：帳號總數、有效授權數、FHIR Resources、區塊鏈紀錄、
+  系統通知（共 5 張卡；**不要**放報名相關 KPI，報名系統已整個移除）
+- 兩張圖表：
+  - 帳號角色分佈（`#chart-admin-roles`，既有）
+  - 授權有效狀態（**新** canvas id，例如 `chart-admin-dashboard-auth`——注意不能直接沿用
+    `chart-admin-auth` 這個 id，因為那個 id 已經被「授權紀錄頁」自己的圖表佔用，同一個 id
+    不能同時出現在兩個 section；兩張圖表資料相同、id 不同即可，是首頁摘要 + 完整頁面各自一份
+    圖表的正常設計，不是重複導覽項目）
+- 快速前往卡片：FHIR 紀錄／授權紀錄／區塊鏈紀錄／FHIR 驗證中心 四個按鈕（不含報名相關按鈕，
+  因為報名系統已整個移除）
+- 系統說明卡片（`#admin-system-summary`）：簡述平台架構與角色分工
+
+### 2. 帳號管理（account-management-section）★合併後的頁面
+單一表格，欄位：姓名／帳號／Email／角色／單位／手機／狀態／操作
+- 資料來源：`state.accounts`，每筆都要顯示完整欄位（把舊版「帳號列表」與「使用者資料」兩張表的
+  欄位合併進同一張表，不要分成兩頁）
+- 操作欄：啟用／停用按鈕，`onclick="toggleAccount('帳號id')"`（既有函式，不要自己重寫）
+
+### 3. FHIR 紀錄（fhir-record-section）
+- 頁面最上方：3 個 KPI 小卡（健康紀錄筆數、Observation 筆數、使用者人數），容器 id 例如
+  `fhir-record-kpis` — 這是舊版「Observation 紀錄」獨立頁的內容，這次直接放在本頁最上方，
+  不做成獨立導覽項目
+- FHIR 資源統計圖表（`#chart-admin-fhir`，Chart.js 長條圖，既有）
+- FHIR 紀錄列表（`#fhir-record-list`）：逐筆顯示 `generateFHIRBundle()` 產生的資源摘要
+
+### 4. 授權紀錄（authorization-record-section）
+- 授權有效狀態圖表（`#chart-admin-auth`，跟首頁那張是不同 canvas id，見上方首頁規格說明）
+- 表格欄位：使用者／授權對象／授權範圍／Token / 狀態／建立時間，資料來源 `state.authorizations`
+
+### 5. 區塊鏈紀錄（blockchain-section）
+- 誠實聲明段落（見上方資料慣例）
+- 表格欄位：Hash／來源／事件／時間，資料來源 `state.blockchainLogs`
+
+### 6. FHIR 驗證中心（fhir-validator-section）
+既有 `renderFHIRValidation()` 已經完整實作這個頁面的全部內容，靜態 HTML 只要放
+`<section id="fhir-validator-section" class="content-section"></section>` 一個空容器即可，
+不要手刻任何內文，函式會在渲染時自動填入標題、驗證結果、HAPI 同步展示卡、JSON 預覽、同步紀錄表。
+
+### 7. 系統設定（system-setting-section）
+- 系統通知列表（`#system-notification-list`）
+- 「重置 Demo 資料」按鈕，呼叫 `resetDemoData()`
+- **不要**加「FHIR 連線設定」「AI 敏感度門檻」「維護模式」這類欄位：FHIR 連線設定（Server URL
+  等）其實是「FHIR 驗證中心」頁自己的既有欄位，不屬於系統設定頁；「AI 敏感度門檻」「維護模式」
+  目前在 codebase 裡完全不存在，這次不新增，保持系統設定頁精簡誠實
+
+### 8. 通知中心（notification-section）
+- 通知列表（timeline 樣式），資料來自 `state.notifications`
+
+────────────────────────────────────────────────────────────────
+【明確要刪除、不要包含在管理員端的內容】
+────────────────────────────────────────────────────────────────
+
+- ❌ 「使用者資料」獨立頁（原 `user-management-section`）：資料已併入合併後的「帳號管理」表格
+- ❌ 「Observation 紀錄」獨立頁（原 `observation-record-section`）：3 個 KPI 已併入「FHIR 紀錄」頁最上方
+- ❌ 「報名列表」「報名審核」（原 `registration-list-section` / `registration-review-section`）：
+  競賽報名系統已整個從平台移除，管理員端不要包含任何報名審核功能，首頁快速前往卡片也不要有
+  報名相關按鈕，`renderAdminDashboard()` 的 KPI 也不要放報名相關數字
+- ❌ 任何「個人健康建議」「AI 風險預測」「健康報告下載」類以單一病患為中心的功能：不屬於管理員角色
+- ❌ 資料安全與隱私保護中心（`security-center-section`）、Care Team 協作中心（`care-team-section`）：
+  這兩個功能已經被清空成空函式，是既定事實，不是還要決定的開放問題，不要重建
+
+────────────────────────────────────────────────────────────────
+【驗收檢查清單】
+────────────────────────────────────────────────────────────────
+
+□ nav-menu 剛好 5 個一級群組（首頁、帳號管理、FHIR▾、FHIR驗證中心、系統設定），FHIR 下只有
+  3 個子項目，展開共 7 個入口
+□ 帳號管理頁面欄位包含姓名／帳號／Email／角色／單位／手機／狀態／操作，只有一張表格
+□ 啟用/停用按鈕呼叫既有的 `toggleAccount(id)`，沒有另外重寫一個同功能函式
+□ FHIR 紀錄頁最上方有 3 個 KPI 小卡，且沒有獨立的「Observation 紀錄」導覽項目
+□ 首頁「授權有效狀態」圖表跟授權紀錄頁的圖表用不同 canvas id，兩者都能正常渲染，沒有 id 衝突
+□ FHIR 驗證中心是空容器，內容完全由既有 `renderFHIRValidation()` 填入，沒有手刻重複內容
+□ 系統設定頁沒有「FHIR連線設定/AI敏感度門檻/維護模式」這類不存在或位置錯誤的欄位
+□ 所有 innerHTML 寫入的字串都經過 `escapeHTML()`
+□ 通知鈴鐺未讀徽章能正確反映未讀數
+□ 用非 admin 角色帳號或未登入狀態直接開啟 app-admin.html，應該立刻被導回 index.html
+□ 沒有任何報名系統相關的頁面、按鈕、函式呼叫殘留，`admin-dashboard-cards` 沒有報名相關 KPI
+□ 沒有出現任何「個人健康建議」「AI 風險預測」「健康報告下載」等病患中心功能
+□ 沒有出現安全中心、Care Team 的任何殘留程式碼或 nav 項目
+□ 區塊鏈紀錄頁保留誠實聲明段落
+□ 深色模式、通知鈴鐺、登出、demo 重置流程與其他三個角色頁行為一致
+
+────────────────────────────────────────────────────────────────
+【本次實作備註（2026-07-10）】
+────────────────────────────────────────────────────────────────
+
+依本規格已產出新版 `app-admin.html`，並對 `shared.js` 做了以下最小必要修改：
+1. `renderAdminViews()`：`account-management-body` 的每列加上「單位」「手機」兩欄；移除對
+   `user-management-body` 的 `setHTML()` 呼叫；`observation-record-panel` 改名為
+   `fhir-record-kpis`（放在 FHIR 紀錄頁最上方）。
+2. `renderAdminDashboard()`：移除「報名總數」「報名待審核」兩張 KPI 卡，新增「有效授權數」，
+   摘要文字移除「競賽報名審核」字樣。
+3. `renderAdminCharts()`：移除依賴 `state.registrations` 的舊「報名審核狀態」圖表；新增
+   `chart-admin-dashboard-auth`（首頁摘要用），跟既有 `chart-admin-auth`（授權紀錄頁用）使用
+   同一份資料但不同 canvas id，避免 id 衝突。
+4. `ensureFHIRValidatorUI()`：移除 DOM 建立邏輯，改為 no-op（section/nav 按鈕已經是靜態內容）。
+
+`toggleAccount(id)` 經查證是既有函式，直接沿用，本次規劃文件先前版本誤判「沒有現成函式」，
+已在本版修正說明。
+
+以上修改範圍侷限在「僅管理員角色會呼叫到」的函式，不影響使用者／教練／營養師三個頁面的行為。

@@ -44,22 +44,16 @@
         </button>
         <div class="nav-menu" id="nav-menu">
             <button class="nav-btn" data-section="admin-dashboard-section" onclick="showSection('admin-dashboard-section')"><i class="bi bi-house-door-fill"></i> 首頁</button>
-            <div class="nav-dropdown-wrap">
-                <button class="nav-btn" onclick="toggleDropdown(this)"><i class="bi bi-person-badge-fill"></i> 帳號管理 <span class="nav-caret">▾</span></button>
-                <div class="nav-dropdown">
-                    <button class="nav-dropdown-item" data-section="account-management-section" onclick="showSection('account-management-section')"><i class="bi bi-list-ul"></i> 帳號列表</button>
-                    <button class="nav-dropdown-item" data-section="user-management-section" onclick="showSection('user-management-section')"><i class="bi bi-person-lines-fill"></i> 使用者資料</button>
-                </div>
-            </div>
+            <button class="nav-btn" data-section="account-management-section" onclick="showSection('account-management-section')"><i class="bi bi-person-badge-fill"></i> 帳號管理</button>
             <div class="nav-dropdown-wrap">
                 <button class="nav-btn" onclick="toggleDropdown(this)"><i class="bi bi-file-earmark-medical"></i> FHIR <span class="nav-caret">▾</span></button>
                 <div class="nav-dropdown">
                     <button class="nav-dropdown-item" data-section="fhir-record-section" onclick="showSection('fhir-record-section')"><i class="bi bi-file-earmark-code"></i> FHIR 紀錄</button>
-                    <button class="nav-dropdown-item" data-section="observation-record-section" onclick="showSection('observation-record-section')"><i class="bi bi-clipboard2-pulse"></i> Observation 紀錄</button>
                     <button class="nav-dropdown-item" data-section="authorization-record-section" onclick="showSection('authorization-record-section')"><i class="bi bi-shield-check"></i> 授權紀錄</button>
                     <button class="nav-dropdown-item" data-section="blockchain-section" onclick="showSection('blockchain-section')"><i class="bi bi-link-45deg"></i> 區塊鏈紀錄</button>
                 </div>
             </div>
+            <button class="nav-btn" data-section="fhir-validator-section" onclick="showSection('fhir-validator-section')"><i class="bi bi-patch-check-fill"></i> FHIR 驗證中心</button>
             <button class="nav-btn" data-section="system-setting-section" onclick="showSection('system-setting-section')"><i class="bi bi-gear-fill"></i> 系統設定</button>
         </div>
         <div class="nav-right">
@@ -96,7 +90,7 @@
                 <div class="role-hero-text">
                     <p class="role-hero-eyebrow">歡迎回來</p>
                     <h2><span id="role-hero-name">管理員</span>，系統目前運作正常</h2>
-                    <p>掌握帳號、FHIR 資源與報名審核狀態，一站管理整個平台。</p>
+                    <p>掌握帳號、FHIR 資源與授權狀態，一站管理整個平台。</p>
                 </div>
                 <div class="role-hero-media" aria-hidden="true">背景圖片預留位置</div>
             </div>
@@ -107,19 +101,17 @@
                     <canvas id="chart-admin-roles" height="180" role="img" aria-label="帳號角色分佈圖"></canvas>
                 </div>
                 <div class="chart-box">
-                    <div class="chart-box-title">報名審核狀態</div>
-                    <canvas id="chart-admin-reg" height="180" role="img" aria-label="報名審核狀態圖"></canvas>
+                    <div class="chart-box-title">授權有效狀態</div>
+                    <canvas id="chart-admin-dashboard-auth" height="180" role="img" aria-label="授權有效狀態圖"></canvas>
                 </div>
             </div>
             <div class="card" style="margin-top:24px">
                 <h3>快速前往</h3>
                 <div class="quick-access-grid">
                     <button type="button" class="secondary-button" onclick="showSection('fhir-record-section')"><i class="bi bi-file-earmark-code"></i> FHIR 紀錄</button>
-                    <button type="button" class="secondary-button" onclick="showSection('observation-record-section')"><i class="bi bi-clipboard2-pulse"></i> Observation 紀錄</button>
                     <button type="button" class="secondary-button" onclick="showSection('authorization-record-section')"><i class="bi bi-shield-check"></i> 授權紀錄</button>
                     <button type="button" class="secondary-button" onclick="showSection('blockchain-section')"><i class="bi bi-link-45deg"></i> 區塊鏈紀錄</button>
-                    <button type="button" class="secondary-button" onclick="showSection('registration-list-section')"><i class="bi bi-list-ul"></i> 報名列表</button>
-                    <button type="button" class="secondary-button" onclick="showSection('registration-review-section')"><i class="bi bi-check2-square"></i> 報名審核</button>
+                    <button type="button" class="secondary-button" onclick="showSection('fhir-validator-section')"><i class="bi bi-patch-check-fill"></i> FHIR 驗證中心</button>
                 </div>
             </div>
             <div class="card" style="margin-top:24px">
@@ -128,28 +120,15 @@
             </div>
         </section>
 
-        <!-- Account Management -->
+        <!-- Account Management (合併：帳號列表 + 使用者資料) -->
         <section id="account-management-section" class="content-section">
-            <h2 class="section-title">帳號列表</h2>
+            <h2 class="section-title">帳號管理</h2>
             <div class="card table-card">
                 <table>
                     <thead>
-                        <tr><th>姓名</th><th>帳號</th><th>Email</th><th>角色</th><th>狀態</th><th>操作</th></tr>
+                        <tr><th>姓名</th><th>帳號</th><th>Email</th><th>角色</th><th>單位</th><th>手機</th><th>狀態</th><th>操作</th></tr>
                     </thead>
                     <tbody id="account-management-body"></tbody>
-                </table>
-            </div>
-        </section>
-
-        <!-- User Management -->
-        <section id="user-management-section" class="content-section">
-            <h2 class="section-title">使用者資料</h2>
-            <div class="card table-card">
-                <table>
-                    <thead>
-                        <tr><th>姓名</th><th>Email</th><th>角色</th><th>單位</th><th>手機</th></tr>
-                    </thead>
-                    <tbody id="user-management-body"></tbody>
                 </table>
             </div>
         </section>
@@ -157,17 +136,12 @@
         <!-- FHIR Record -->
         <section id="fhir-record-section" class="content-section">
             <h2 class="section-title">FHIR 紀錄</h2>
+            <div id="fhir-record-kpis" class="kpi-grid" style="margin-bottom:20px"></div>
             <div class="chart-box" style="margin-bottom:20px">
                 <div class="chart-box-title">FHIR 資源統計</div>
                 <canvas id="chart-admin-fhir" height="180" role="img" aria-label="FHIR 資源統計圖"></canvas>
             </div>
             <div id="fhir-record-list"></div>
-        </section>
-
-        <!-- Observation Record -->
-        <section id="observation-record-section" class="content-section">
-            <h2 class="section-title">Observation 紀錄</h2>
-            <div id="observation-record-panel"></div>
         </section>
 
         <!-- Authorization Record -->
@@ -201,24 +175,8 @@
             </div>
         </section>
 
-        <!-- Registration List -->
-        <section id="registration-list-section" class="content-section">
-            <h2 class="section-title">報名列表</h2>
-            <div class="card table-card">
-                <table>
-                    <thead>
-                        <tr><th>報名 ID</th><th>團隊名稱</th><th>作品名稱</th><th>類別</th><th>負責人</th><th>Email</th><th>狀態</th><th>操作</th></tr>
-                    </thead>
-                    <tbody id="registration-list-body"></tbody>
-                </table>
-            </div>
-        </section>
-
-        <!-- Registration Review -->
-        <section id="registration-review-section" class="content-section">
-            <h2 class="section-title">報名審核</h2>
-            <div id="registration-review-panel"></div>
-        </section>
+        <!-- FHIR Validator (renderFHIRValidation() 會完整重寫本區塊內容，含標題) -->
+        <section id="fhir-validator-section" class="content-section"></section>
 
         <!-- Notifications -->
         <section id="notification-section" class="content-section">
@@ -242,7 +200,7 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="shared.js?v=20260708-insertbefore-fix"></script>
+    <script src="shared.js?v=20260710-role-rebuild"></script>
     <script>
         (async function () {
             await initDefaultAccounts();

@@ -1,0 +1,270 @@
+====================================================================
+AI Health Platform — 使用者端 (app-user.html) 重新實作 Prompt
+產生日期：2026-07-10（2026-07-10 修訂：套用 10 項改善並已實作完成）
+用途：依此規格從零產出使用者端頁面與其角色專屬渲染邏輯。
+狀態：本版本已依規格實作完成 app-user.html，並對 shared.js 做了對應的最小必要修改
+（見文末【本次實作備註】）。若要重新產生此頁面，此規格仍可作為完整依據。
+====================================================================
+
+────────────────────────────────────────────────────────────────
+【專案背景】
+────────────────────────────────────────────────────────────────
+
+這是一個 FHIR 健康競賽的示範平台，純前端、無建置步驟、無框架，共 4 個角色頁面
+（使用者／教練／營養師／管理員）+ 1 個登入頁 index.html，全部共用同一個
+`shared.js`（核心引擎：帳號、健康資料、AI 分析、FHIR Bundle 產生、授權機制、
+圖表、通知）與 `style.css`。你只需要負責「使用者端」這一個角色頁面
+（`app-user.html`）與它專屬的渲染／互動邏輯，不要重新實作已存在於 shared.js
+的核心功能（登入、AI 規則引擎、FHIR Bundle 產生器、授權驗證邏輯等），直接呼叫它們。
+
+────────────────────────────────────────────────────────────────
+【你必須沿用、不要重新定義的共用基礎建設】
+────────────────────────────────────────────────────────────────
+
+1. 頁首標準結構（每個角色頁共用同一套 shell，只有品牌色與導覽項目不同）：
+   - `<head>` 內含 Google Fonts 預連結、`style.css`、`vendor/bootstrap-icons/bootstrap-icons.css`、
+     `manifest.json`、`<meta name="theme-color" content="#0f766e">`（使用者端專屬色，teal）
+   - 深色模式初始化 inline script：
+     `if (localStorage.getItem("ai_health_platform_theme") === "dark") document.documentElement.dataset.theme = "dark";`
+   - 登入守衛 inline script（角色寫死為 "user"）：
+     ```
+     (function () {
+         try {
+             const s = JSON.parse(localStorage.getItem("ai_health_platform_login_state_v2") || "{}");
+             if (s.loginAt && Date.now() - s.loginAt > 12 * 60 * 60 * 1000) { window.location.href = "index.html"; }
+             if (!s.currentAccount && !s.demoMode) { window.location.href = "index.html"; }
+             if (s.role !== "user") { window.location.href = "index.html"; }
+         } catch (e) { window.location.href = "index.html"; }
+     })();
+     ```
+   - `<body class="page-body role-user">`
+   - Navbar：`nav-brand`（圖示 AI + 「AI Health」+ 副標「一般使用者」）、漢堡選單按鈕、
+     `nav-menu` 導覽項目（見下方導覽結構）、右側深色模式切換按鈕、通知鈴鐺按鈕（`showSection('notification-section')`，
+     內含 `<span class="nav-notif-badge hidden" id="nav-notif-count-icon">` 未讀數徽章，由 shared.js 的
+     `updateNotifBadge()` 在每次 `renderNotifications()` 後自動更新數字與顯示/隱藏，不需要自己額外呼叫）、
+     使用者選單（頭像 U、姓名、角色標籤、登出按鈕 `logoutAccount()`）
+   - 頁尾共用元件：`#chart-tooltip`、`#toast`
+   - 載入順序：Chart.js CDN (`https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js`) →
+     qrcode-generator CDN (`https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js`，僅使用者端需要，因為授權分享頁要產生 QR Code；
+     QR Code 產生的底層邏輯已經完整包在 shared.js 的 `generateQRCode(event)` 內部，不需要自己呼叫 qrcode-generator 的 API) →
+     `shared.js` → 初始化 IIFE：`await initDefaultAccounts(); saveState();` 設定 `#health-date` 為今天日期，
+     最後 `showSection('user-dashboard-section')`
+
+2. 已存在於 shared.js、可直接呼叫的函式（不要重新宣告同名函式，會覆蓋掉既有實作）：
+   - `getCurrentRole()`、`currentAccount()`、`activeUserId()`、`loadState()` / `saveState()`
+   - `escapeHTML(str)` — 任何要寫進 innerHTML 的使用者輸入字串都必須先過這個函式
+   - `nowText()` — 回傳 `YYYY-MM-DD HH:mm` 格式時間字串
+   - `calculateBMI(weight, height)`
+   - `recordsByAccount(accountId)`、`latestRecord(accountId)`、`ensureHealthStore()`
+   - `submitHealthData(event)` — 新增健康資料表單的 submit handler，已處理好驗證與儲存
+   - `generateFHIRBundle(accountId)` — 產生 FHIR R4 Bundle（Patient + Observation）
+   - `runAIAnalysis(accountId)` — 規則式健康評分（55–92 分）、風險等級、飲食/運動/睡眠/就醫/生活習慣五類建議
+   - `isAuthorizationValid(auth)`、`getAuthorizationsByRole(role)`、`authAllows(auth, scope)`、`nextAuthorizationId()`
+   - `addNotification(title, message, type = "system", level = "info", relatedSection = "notification-section", sourceId = "")`
+     （這是目前生效的簽名，檔案中曾經有一個舊簽名 `addNotification(accountId, title, message)` 已被同名函式覆蓋、不再生效，
+     新增程式碼一律照新簽名呼叫，不要照抄舊的——實測時發現 `addWearableNotification()` 仍在用舊簽名呼叫，屬於既有 bug，
+     已一併修正，詳見文末實作備註）
+   - `showSection(sectionId)`、`showToast(message)`、`toggleDropdown(el)`、`toggleNavMenu()`、`toggleUserMenu()`、`toggleDarkMode()`
+   - `logoutAccount()`、`loginAccount(event)`、`demoLogin(role)`、`initDefaultAccounts()`
+   - `setHTML(id, html)`、`kpi(title, value, caption)` — 產生標準 KPI 卡片 HTML 片段
+   - 圖表一律使用 Chart.js（`new Chart(canvas, {...})`），不要手刻 Canvas 繪圖邏輯
+   - `importWearableData(source)` — 穿戴裝置模擬匯入（Apple Health／Garmin／Fitbit）
+   - `printHealthReport()`、`downloadHealthReportPDF()`、`copyHealthReportSummary()`、`generateHealthReport()` — 健康報告下載頁四個工具列按鈕對應的函式，均已存在，直接綁定 onclick 即可
+
+3. state 資料結構（讀寫都要透過 `state` 物件 + `saveState()`，不要自建平行資料）：
+   ```
+   state.accounts          // 帳號與個人資料
+   state.healthRecords     // 健康觀測值（血壓/體重/心率/步數/運動/睡眠）。
+                            // 注意：穿戴裝置匯入資料也是寫進這個陣列，用 record.source / record.dataSource
+                            // 欄位標記匯入來源（例如 "Apple Health"），並非另外存成獨立的匯入紀錄陣列。
+                            // 「匯入紀錄」表格就是把這個陣列依 source/dataSource 是否有值篩選出來显示，
+                            // 不要自己另外建立 state.wearableImportHistory 之類的平行陣列。
+   state.authorizations    // 授權分享紀錄（見下方授權規則）
+   state.trainingRecords   // 教練寫給學員的訓練紀錄（唯讀，使用者端不編輯）
+   state.nutritionRecords  // 營養師寫給個案的營養紀錄（唯讀，使用者端不編輯）
+   state.blockchainLogs    // 模擬區塊鏈存證（使用者端不需要顯示，屬於管理員端）
+   state.notifications     // 通知
+   state.patient           // 個人資料設定（姓名/性別/生日/身高/目標體重/步數與運動目標）
+   state.predictionScenario// AI 風險預測情境模擬器參數
+   state.generatedHealthReport // 最近一次產生的健康報告摘要
+   state.currentAccount, state.role, state.demoMode, state.loginAt
+   ```
+
+4. 資料慣例：
+   - Timestamp 一律 `YYYY-MM-DD HH:mm`
+   - 永久授權以字串 `"永久授權"` 表示（`isAuthorizationValid()` 已處理這個特例，不要自己重新判斷）
+   - 授權 ID 格式 `AUTH-YYYYMMDD-NNN`（用 `nextAuthorizationId()` 產生，不要自己拼字串）
+   - 所有 AI 相關功能（AI 健康建議、AI 風險預測、首頁 AI 摘要卡）畫面上都必須有一行誠實標註，例如
+     「AI 分析為規則式模擬展示，非真實醫療診斷」，不可讓評審誤以為串接了真實模型
+   - 「健康報告下載」內容裡會有一行「FHIR 驗證結果」摘要（呼叫 `validateFHIRBundle()` 顯示狀態與錯誤數），
+     這只是報告裡的一行摘要文字，**不等於**要開放完整的 FHIR 驗證中心頁面——FHIR 驗證中心這次規劃
+     已決定只給管理員（見下方刪除清單），兩者不衝突，不要因為報告裡出現這行摘要就誤以為要把
+     FHIR 驗證中心一併加回使用者端
+
+────────────────────────────────────────────────────────────────
+【使用者角色定位】
+────────────────────────────────────────────────────────────────
+
+使用者是平台的資料擁有者（病患本人）：記錄並查看自己的健康數據、取得 AI 個人化建議、
+決定要把哪些資料分享給教練／營養師／管理員、匯入穿戴裝置模擬資料、管理自己的帳號資料。
+
+────────────────────────────────────────────────────────────────
+【導覽結構（nav-menu 共 6 個一級群組，展開後共 8 個可點擊入口）】
+────────────────────────────────────────────────────────────────
+
+nav-menu 由左到右：
+1. 首頁 → `user-dashboard-section`
+2. 健康資料 ▾（下拉選單）
+   - 新增資料 → `health-input-section`
+   - 健康趨勢 → `health-trend-section`
+3. AI 分析 ▾（下拉選單）
+   - AI 健康建議 → `ai-health-section`
+   - AI 風險預測 → `ai-prediction-section`
+     ※ 這個子項目的位置是本次重新規劃新排定的（原本是 shared.js 在執行期自動插到 nav-menu 最後面，
+       沒有固定歸屬的下拉選單）。這裡選擇把它併進既有的「AI 分析」下拉選單，是因為兩者都是
+       AI 驅動的病患自身分析內容，性質相同；如果之後覺得這個分類方式不理想，這是可以再調整的設計決定，
+       不是不可更動的鐵律。
+4. 授權分享 → `share-section`
+5. 個人資料設定 → `profile-section`
+6. 健康報告下載 → `health-report-section`
+
+nav-right：深色模式切換、通知鈴鐺（`notification-section`，含未讀徽章 `#nav-notif-count-icon`）、使用者選單（登出）
+
+頁面內另外還有（不佔 nav-menu 版位，但一樣要驗收）：
+- 右下角浮動按鈕：穿戴裝置匯入 → `wearable-import-section`
+  （`<button class="wearable-float-button" onclick="showSection('wearable-import-section')">`）
+- 通知中心 `notification-section`（由 nav-right 的鈴鐺按鈕開啟）
+
+以上「AI 風險預測」「個人資料設定」「健康報告下載」原本是 shared.js 用 JS 在執行期動態插入
+DOM 才出現的（`ensureAIPredictionUI()`／`ensureProfileUI()`／`ensureHealthReportDownloadSection()`），
+這次重新實作請把它們**直接寫進 app-user.html 的靜態 HTML 結構與 nav-menu**，
+不要再用「執行期插入 DOM」的方式做（那正是舊架構複雜、權限資料來源分歧的病灶）。
+對應的渲染函式（`renderHealthPrediction()`、`renderProfileSection()`、`renderHealthReport()`）
+內容邏輯可以沿用，但移除函式開頭那段「建立 DOM 節點」的程式碼，因為節點已經在靜態 HTML 裡了。
+- `ai-prediction-section`、`health-report-section`：`renderHealthPrediction()` / `renderHealthReport()`
+  每次都會整段重寫 `section.innerHTML`（含標題），所以這兩個 section 在靜態 HTML 裡只要放一個
+  空的 `<section id="..." class="content-section"></section>` 容器即可，不需要預先寫標題或內容。
+- `profile-section`：`renderProfileSection()` 只會用 `setInputValue()` 填值到既有欄位，**不會**
+  重建整個表單 HTML，所以這個 section 的表單欄位（姓名/性別/生日/身高/目標體重/步數目標/運動目標）
+  必須完整寫在靜態 HTML 裡，不能留空容器。
+
+────────────────────────────────────────────────────────────────
+【逐頁規格】
+────────────────────────────────────────────────────────────────
+
+### 1. 首頁（user-dashboard-section）
+- role-hero 橫幅：歡迎文字 + 副標
+- KPI 卡片列（`#user-dashboard-cards`）：可用 `kpi()` 產生，建議顯示最新血壓、體重/BMI、
+  今日步數、AI 健康分數；尚無健康資料時（首次登入、還沒新增過任何一筆）每個數值都要 fallback
+  顯示 `"--"`，不要顯示 `NaN`、`undefined` 或空白，也不要拋出錯誤
+- 兩張圖表：血壓趨勢（近 7 筆）、每日步數（近 7 筆），Chart.js 折線/長條圖
+- 兩張摘要卡：「AI 健康摘要」（含誠實標註 + 「查看完整建議」按鈕導向 `ai-health-section`）、
+  「最新通知」（含「查看所有通知」按鈕）
+
+### 2. 新增資料（health-input-section）
+表單欄位（皆為 required，沿用既有 `submitHealthData(event)` handler）：
+日期、收縮壓 mmHg (60-220)、舒張壓 mmHg (40-130)、心率 bpm (40-220)、
+體重 kg (30-250, step 0.1)、身高 cm (100-250)、步數 (0-100000)、運動時間分鐘 (0-600)
+
+### 3. 健康趨勢（health-trend-section）
+- 區間切換按鈕：7天／14天／30天／全部（`setTrendRange(n)`）
+- 趨勢摘要 KPI 卡片列
+- 5 張趨勢圖：血壓、體重與 BMI、心率、每日步數、運動時間與熱量
+- 底部 AI 趨勢摘要卡片
+
+### 4. AI 健康建議（ai-health-section）
+- 誠實標註「AI 分析為規則式模擬展示，非真實醫療診斷」
+- AI 健康分數卡（大數字 + 風險等級文字）
+- AI 趨勢摘要
+- 風險標籤列（chip list）
+- 5 張建議卡片：飲食建議、運動建議、睡眠建議、就醫提醒、生活習慣建議
+- 資料不足時要顯示「請先新增健康紀錄」的空狀態，不要顯示錯誤或空白
+
+### 5. AI 風險預測（ai-prediction-section）
+- 標題「AI 風險預測」+ 副標「使用 localStorage 健康紀錄模擬未來 30 天健康趨勢」
+- 資料不足（少於 3 筆健康紀錄）時顯示空狀態卡片，引導去新增健康資料
+- 目前健康分數 / 30 天後預測分數 / 趨勢方向 三張卡
+- 各項指標（BMI、血壓、運動時間等）目前 vs 30 天後預測值卡片
+- 30 天預測折線圖（Chart.js，多條資料線：健康分數、BMI、血壓、運動時間）
+- 風險清單與 AI 建議
+- 情境模擬器：可調整每週運動時間／睡眠時數／飲食狀態／壓力程度，按「重新預測」即時更新
+- FHIR 整合說明卡片（列出此預測基於哪些 FHIR Observation 類型）
+
+### 6. 授權分享（share-section）
+- 左側表單「建立授權」：授權對象（教練/營養師/系統管理員 下拉）、
+  資料範圍 checkbox（血壓/體重/BMI/心率/步數/運動紀錄，可複選）、
+  授權期限（24小時/7天/30天/永久授權）、送出後呼叫 `generateQRCode(event)`
+- 右側 QR Code 卡片：canvas 顯示 QR Code、授權對象／資料範圍／有效期限／驗證 Token 摘要
+
+### 7. 個人資料設定（profile-section）
+表單欄位：姓名、性別（男/女/其他）、生日、身高 cm、目標體重 kg、
+每日步數目標、每週運動目標分鐘數，submit 呼叫 `submitProfileSettings(event)`，
+下方提示文字：「BMI 計算主要使用此處的身高設定；單筆健康資料若有身高，會優先使用該筆資料。」
+
+### 8. 健康報告下載（health-report-section）
+- 工具列：產生健康報告／列印報告／下載 PDF／複製報告摘要 四個按鈕
+  （`generateHealthReport()` / `printHealthReport()` / `downloadHealthReportPDF()` / `copyHealthReportSummary()`）
+- 沒有健康資料時顯示空狀態
+- 報告內容：封面（姓名 + 產生時間 + 健康分數 + 風險等級）、個人資料表、最新指標、
+  AI 建議摘要、FHIR 摘要（含一行 FHIR 驗證結果摘要）、授權紀錄表、報告聲明
+- 報告區塊要加 `report-no-print` class 標記工具列（列印時隱藏），內文加 `health-report-document` class
+
+### 9. 穿戴裝置匯入（wearable-import-section，浮動按鈕開啟）
+- 三張裝置卡片：Apple Health／Garmin／Fitbit，各自「模擬匯入」按鈕呼叫 `importWearableData(source)`
+- 匯入紀錄表格：時間／裝置來源／步數／心率／睡眠／運動時間／狀態（資料來源見上方 state 結構說明）
+
+### 10. 通知中心（notification-section）
+- 通知列表（timeline 樣式），資料來自 `state.notifications`
+
+────────────────────────────────────────────────────────────────
+【明確要刪除、不要包含在使用者端的內容】
+────────────────────────────────────────────────────────────────
+
+- ❌ FHIR JSON 檢視器（`fhir-viewer-section`、`copyFHIR()`、`downloadFHIR()`）：
+  孤兒功能，且對一般使用者過於技術性，整段不要出現
+- ❌ FHIR 驗證中心（`fhir-validator-section`）：這次規劃改為只給管理員，使用者端不要有這個入口
+  （健康報告裡的一行 FHIR 驗證摘要不算違反這條，見上方資料慣例說明）
+- ❌ 競賽報名系統（`registration-section`、`my-registration-section`、報名相關表單與函式）：
+  已決定整個平台移除，使用者端不要包含報名表單或「查看我的報名」按鈕
+- ❌ 資料安全與隱私保護中心（`security-center-section`）：已停用功能，整段不要重建
+- ❌ Care Team 協作中心（`care-team-section`）：已停用功能，整段不要重建
+
+────────────────────────────────────────────────────────────────
+【驗收檢查清單】
+────────────────────────────────────────────────────────────────
+
+□ nav-menu 剛好 6 個一級群組（首頁、健康資料▾、AI分析▾、授權分享、個人資料設定、健康報告下載），
+  展開後共 8 個可點擊入口
+□ 浮動按鈕（穿戴裝置匯入）與通知中心（notification-section）都能正常開啟，即使不在 nav-menu 群組計數內
+□ 所有動態內容第一次渲染時就應該有靜態 section 容器，不需要執行期插入 DOM 才出現
+□ 所有 innerHTML 寫入的使用者輸入字串都經過 `escapeHTML()`
+□ AI 健康建議 / AI 風險預測 / 首頁 AI 摘要卡都有「AI 分析為規則式模擬展示」的誠實標註
+□ 首頁 KPI 卡片在尚無健康資料時全部 fallback 顯示 "--"，不出現 NaN/undefined/報錯
+□ 授權分享送出後，資料範圍的 checkbox 選項與 `authAllows()` 用的 scope 字串完全一致
+  （血壓／體重／BMI／心率／步數／運動紀錄）
+□ 穿戴裝置匯入後，「匯入紀錄」表格資料正確來自 `state.healthRecords` 中帶 source/dataSource 的紀錄，
+  沒有另外新增平行陣列
+□ 沒有出現 FHIR JSON 檢視器、FHIR 驗證中心、報名系統、安全中心、Care Team 的任何殘留程式碼或 nav 項目
+□ 深色模式、通知鈴鐺（含未讀徽章）、登出、demo 重置流程與其他三個角色頁行為一致
+□ 用非 user 角色帳號或未登入狀態直接開啟 app-user.html，應該立刻被導回 index.html（測試登入守衛）
+
+────────────────────────────────────────────────────────────────
+【本次實作備註（2026-07-10）】
+────────────────────────────────────────────────────────────────
+
+依本規格已產出新版 `app-user.html`，並對 `shared.js` 做了以下最小必要修改：
+1. `ensureProfileUI()`：移除 DOM 建立邏輯，只保留依個人資料同步 `#health-height` 輸入框
+   min/max/placeholder 的部分（這不是 DOM 建立，是既有元素的屬性同步，予以保留）。
+2. `ensureAIPredictionUI()`：整段清空為 no-op（沿用 codebase 既有「已停用功能」的寫法慣例）。
+3. `ensureHealthReportDownloadSection()`：改為只依角色回傳既有 `#health-report-section` 元素或 `null`，
+   不再建立 DOM。
+4. `addWearableNotification(source)` 改用 `addNotification(title, message, type, level,
+   relatedSection, sourceId)` 新簽名直接呼叫，方便標記 type/level/relatedSection。
+
+**重要更正**：本文件先前版本誤判 `addNotification()` 存在「舊簽名已失效」的真實 bug。深入追查
+後發現，shared.js 目前生效的 `addNotification(title, message, type, level, relatedSection,
+sourceId)` 內部其實有一段相容判斷：只要第一個參數是帳號 ID（`ACC-` 開頭）或 `"all"`，且呼叫時
+只帶 ≤3 個參數，就會自動改用舊式 `(accountId, title, message)` 的方式解讀，包含
+`addWearableNotification()` 原本的寫法在內，全部都能正常運作，不是 bug。上面第 4 點的修改只是
+改用新簽名讓程式碼更明確（多帶 type/level/relatedSection/sourceId），不是修 bug，特此更正。
+以上修改範圍侷限在「僅使用者角色會呼叫到」的函式，不影響教練／營養師／管理員三個頁面的行為。

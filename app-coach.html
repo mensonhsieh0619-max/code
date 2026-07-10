@@ -48,11 +48,9 @@
                 <button class="nav-btn" onclick="toggleDropdown(this)"><i class="bi bi-people-fill"></i> 學員管理 <span class="nav-caret">▾</span></button>
                 <div class="nav-dropdown">
                     <button class="nav-dropdown-item" data-section="student-list-section" onclick="showSection('student-list-section')"><i class="bi bi-list-ul"></i> 學員列表</button>
-                    <button class="nav-dropdown-item" data-section="student-exercise-section" onclick="showSection('student-exercise-section')"><i class="bi bi-activity"></i> 運動紀錄</button>
-                    <button class="nav-dropdown-item" data-section="student-heart-rate-section" onclick="showSection('student-heart-rate-section')"><i class="bi bi-heart-pulse-fill"></i> 心率趨勢</button>
+                    <button class="nav-dropdown-item" data-section="student-overview-section" onclick="showSection('student-overview-section')"><i class="bi bi-clipboard2-pulse"></i> 學員總覽</button>
                 </div>
             </div>
-            <button class="nav-btn" data-section="training-advice-section" onclick="showSection('training-advice-section')"><i class="bi bi-robot"></i> AI 訓練建議</button>
             <button class="nav-btn" data-section="training-record-section" onclick="showSection('training-record-section')"><i class="bi bi-journal-text"></i> 訓練紀錄</button>
         </div>
         <div class="nav-right">
@@ -107,8 +105,9 @@
                 </div>
                 <div class="card">
                     <h3>AI 訓練建議摘要</h3>
+                    <p class="disclaimer-note">AI 建議為規則式模擬展示，非真實教練意見。</p>
                     <div id="coach-ai-summary"></div>
-                    <button class="secondary-button" onclick="showSection('training-advice-section')" style="margin-top:12px">查看完整建議</button>
+                    <button class="secondary-button" onclick="showSection('student-overview-section')" style="margin-top:12px">查看完整建議</button>
                 </div>
             </div>
         </section>
@@ -126,24 +125,11 @@
             </div>
         </section>
 
-        <!-- Student Exercise -->
-        <section id="student-exercise-section" class="content-section">
-            <h2 class="section-title">學員運動紀錄</h2>
-            <div id="student-exercise-panel"></div>
-        </section>
-
-        <!-- Student Heart Rate -->
-        <section id="student-heart-rate-section" class="content-section">
-            <h2 class="section-title">學員心率趨勢</h2>
-            <div class="card">
-                <div class="chart-card"><canvas id="student-heart-chart" height="220" role="img" aria-label="學員心率趨勢圖"></canvas></div>
-            </div>
-        </section>
-
-        <!-- Training Advice -->
-        <section id="training-advice-section" class="content-section">
-            <h2 class="section-title">AI 訓練建議</h2>
-            <div id="training-advice-panel"></div>
+        <!-- Student Overview (合併：運動紀錄 + 心率趨勢 + AI 訓練建議) -->
+        <section id="student-overview-section" class="content-section">
+            <h2 class="section-title">學員總覽</h2>
+            <p class="disclaimer-note">依授權範圍顯示，未授權欄位不顯示；AI 訓練建議為規則式模擬展示。</p>
+            <div id="student-overview-panel"></div>
         </section>
 
         <!-- Training Record -->
@@ -188,7 +174,7 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="shared.js?v=20260708-insertbefore-fix"></script>
+    <script src="shared.js?v=20260710-role-rebuild"></script>
     <script>
         (async function () {
             await initDefaultAccounts();

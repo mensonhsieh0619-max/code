@@ -1,0 +1,213 @@
+====================================================================
+AI Health Platform — 營養師端 (app-nutrition.html) 重新實作 Prompt
+產生日期：2026-07-10（2026-07-10 修訂：套用 20 項改善並已實作完成）
+用途：依此規格從零產出營養師端頁面與其角色專屬渲染邏輯。
+狀態：本版本已依規格實作完成 app-nutrition.html，並對 shared.js 做了對應的最小必要修改
+（見文末【本次實作備註】）。若要重新產生此頁面，此規格仍可作為完整依據。
+====================================================================
+
+────────────────────────────────────────────────────────────────
+【專案背景】
+────────────────────────────────────────────────────────────────
+
+這是一個 FHIR 健康競賽的示範平台，純前端、無建置步驟、無框架，共 4 個角色頁面
+（使用者／教練／營養師／管理員）+ 1 個登入頁 index.html，全部共用同一個
+`shared.js`（核心引擎：帳號、健康資料、AI 分析、FHIR Bundle 產生、授權機制、
+圖表、通知）與 `style.css`。你只需要負責「營養師端」這一個角色頁面
+（`app-nutrition.html`）與它專屬的渲染／互動邏輯，不要重新實作已存在於 shared.js
+的核心功能（登入、AI 規則引擎、授權驗證邏輯等），直接呼叫它們。
+
+────────────────────────────────────────────────────────────────
+【你必須沿用、不要重新定義的共用基礎建設】
+────────────────────────────────────────────────────────────────
+
+1. 頁首標準結構（每個角色頁共用同一套 shell，只有品牌色與導覽項目不同）：
+   - `<head>` 內含 Google Fonts 預連結、`style.css`、`vendor/bootstrap-icons/bootstrap-icons.css`、
+     `manifest.json`、`<meta name="theme-color" content="#16a34a">`（營養師端專屬色，綠色）
+   - 深色模式初始化 inline script：
+     `if (localStorage.getItem("ai_health_platform_theme") === "dark") document.documentElement.dataset.theme = "dark";`
+   - 登入守衛 inline script（角色寫死為 "nutritionist"）：
+     ```
+     (function () {
+         try {
+             const s = JSON.parse(localStorage.getItem("ai_health_platform_login_state_v2") || "{}");
+             if (s.loginAt && Date.now() - s.loginAt > 12 * 60 * 60 * 1000) { window.location.href = "index.html"; }
+             if (!s.currentAccount && !s.demoMode) { window.location.href = "index.html"; }
+             if (s.role !== "nutritionist") { window.location.href = "index.html"; }
+         } catch (e) { window.location.href = "index.html"; }
+     })();
+     ```
+   - `<body class="page-body role-nutrition">`
+   - Navbar：`nav-brand`（圖示 AI + 「AI Health」+ 副標「營養師」）、漢堡選單按鈕、
+     `nav-menu` 導覽項目（見下方導覽結構）、右側深色模式切換按鈕、通知鈴鐺按鈕（內含
+     `<span class="nav-notif-badge hidden" id="nav-notif-count-icon">` 未讀數徽章，由 shared.js
+     的 `updateNotifBadge()` 自動更新）、使用者選單（頭像 N、姓名、角色標籤、登出按鈕 `logoutAccount()`）
+   - 頁尾共用元件：`#chart-tooltip`、`#toast`
+   - 載入順序：Chart.js CDN → `shared.js`（**不需要**載入 qrcode-generator，營養師端沒有 QR 功能）
+     → 初始化 IIFE：`await initDefaultAccounts(); saveState(); showSection('nutrition-dashboard-section');`
+
+2. 已存在於 shared.js、可直接呼叫的函式（不要重新宣告同名函式）：
+   - `getCurrentRole()`、`currentAccount()`、`loadState()` / `saveState()`
+   - `escapeHTML(str)` — 任何要寫進 innerHTML 的字串都必須先過這個函式（驗收清單硬性項目）
+   - `nowText()`、`calculateBMI(weight, height)`
+   - `getAuthorizationsByRole("nutritionist")` — 取得目前登入營養師被授權的所有個案授權物件
+   - `isAuthorizationValid(auth)` — 過濾出仍有效（未過期、未撤回）的授權
+   - `authAllows(auth, scope)` — 判斷某授權是否包含某資料範圍（例如 `authAllows(auth, "BMI")`），
+     渲染每個個案卡片時，任何欄位顯示前都要先過這個檢查，未授權的欄位直接不顯示。這裡用到的
+     scope 字串（體重／BMI／血壓）**必須跟使用者端「授權分享」頁 checkbox 的 value 完全一致**，
+     否則 `authAllows()` 永遠比對不到
+   - `recordsByAccount(patientId)`、`latestRecord(patientId)` — 用授權物件裡的 `patientId`
+     （透過 `authPatientId(auth)` 取得）查該個案的健康資料
+   - `runAIAnalysis(patientId)` — 取得該個案的 AI 分析結果，`dietAdvice` 欄位就是飲食建議文字
+   - `addNutritionRecord(event)` — 已驗證存在且欄位 id 吻合（見下方逐頁規格）
+   - `addNotification(title, message, type, level, relatedSection, sourceId)` — 通知系統目前生效的
+     完整簽名，直接照這個簽名呼叫即可
+   - `showSection(sectionId)`、`showToast(message)`、`toggleDropdown(el)`、`toggleNavMenu()`、`toggleUserMenu()`、`toggleDarkMode()`
+   - `logoutAccount()`、`loginAccount(event)`、`demoLogin(role)`、`initDefaultAccounts()`
+   - `setHTML(id, html)`、`kpi(title, value, caption)`
+   - `uid(prefix)` — 產生新紀錄 ID（例如營養紀錄）
+   - `drawLineChart(canvasId, records, seriesConfig)` — 既有的 Canvas 折線圖繪製函式（非 Chart.js），
+     簽名為 `drawLineChart(canvasId, recordsArray, [{label, value:(r)=>number, unit, color,
+     status:(value,record)=>string}])`；沒有資料時自動畫「尚無資料」。體重趨勢頁**用這個函式**，
+     不要用 Chart.js
+   - 首頁圖表（`chart-nutrition-bmi`、`chart-nutrition-bp`）沿用既有的 Chart.js 型
+     `createDoughnutChart()`，`renderNutritionCharts()` 已經寫好，不用自己另外處理
+
+3. state 資料結構（讀寫都要透過 `state` 物件 + `saveState()`）：
+   ```
+   state.accounts          // 帳號資料（含個案姓名等基本資料）
+   state.healthRecords     // 個案健康觀測值，需搭配授權過濾欄位後才能顯示
+   state.authorizations    // 授權分享紀錄，營養師端只能讀取 targetRole === "nutritionist" 的項目
+   state.nutritionRecords  // 營養師寫的營養紀錄，營養師端在此新增/查看
+   state.notifications
+   state.currentAccount, state.role, state.demoMode, state.loginAt
+   ```
+   營養師端**不可**讀寫 `state.trainingRecords`、`state.blockchainLogs`、`state.accounts` 的帳號啟用/停用狀態。
+
+4. 資料慣例：
+   - Timestamp 一律 `YYYY-MM-DD HH:mm`
+   - 永久授權以字串 `"永久授權"` 表示（`isAuthorizationValid()` 已處理，不要自己重新判斷）
+   - 所有 AI 相關內容都要有一行誠實標註，例如「AI 飲食建議為規則式模擬展示，非真實營養師意見」
+
+────────────────────────────────────────────────────────────────
+【營養師角色定位與核心原則】
+────────────────────────────────────────────────────────────────
+
+營養師是被使用者授權查看「營養/代謝相關資料」的專業人員：管理自己的個案名單，
+依授權範圍查看個案的體重、BMI、血壓數據，提供飲食建議。
+
+**權限鐵律**：營養師只能看到「明確授權給營養師角色」的個案，且只能看到「該授權勾選的資料欄位」。
+任何一張個案卡片、任何一個數字，渲染前都必須先確認：
+1. 該個案的授權物件存在且 `isAuthorizationValid(auth)` 為 true
+2. 該欄位有被 `authAllows(auth, "欄位名稱")` 允許
+
+**一份內容只能有一個入口**：舊版「BMI分析」「血壓提醒」「AI飲食建議」三個導覽項目，實際上
+render 出來的是完全同一份 HTML（同一個 html 變數塞進三個不同 panel id），這次直接合併成
+「個案總覽」一個頁面，只保留一個 panel id，不要重新拆成多個入口。
+
+────────────────────────────────────────────────────────────────
+【導覽結構（3 個一級群組，展開後共 5 個可點擊入口）】
+────────────────────────────────────────────────────────────────
+
+nav-menu 由左到右：
+1. 首頁 → `nutrition-dashboard-section`
+2. 個案管理 ▾（下拉選單）
+   - 個案列表 → `case-list-section`
+   - 個案總覽 → `case-overview-section`（合併後的新頁面，取代舊的「BMI分析」+「血壓提醒」+「AI飲食建議」三個頁面）
+   - 體重趨勢 → `weight-trend-section`（內容獨立，保留）
+3. 營養紀錄 → `nutrition-record-section`
+
+nav-right：深色模式切換、通知鈴鐺（`notification-section`，含未讀徽章）、使用者選單（登出）
+
+────────────────────────────────────────────────────────────────
+【逐頁規格】
+────────────────────────────────────────────────────────────────
+
+### 1. 首頁（nutrition-dashboard-section）
+- role-hero 橫幅：歡迎文字 + 副標
+- KPI 卡片列（`#nutrition-dashboard-cards`）：既有 `updateNutritionDashboard()` 已產生「被授權
+  個案數／有效授權數／BMI異常個案／血壓偏高個案／AI飲食建議數」5 張卡，直接沿用
+- 兩張圖表：個案 BMI 分佈（`#chart-nutrition-bmi`）、血壓風險分佈（`#chart-nutrition-bp`），
+  Chart.js 圓餅圖
+- 兩張摘要卡：
+  - 「風險摘要」（`#nutrition-risk-summary`）：既有函式已內建「尚未取得個案授權資料。」這類
+    fallback 文字，不需要自己另外設計空狀態文案
+  - 「AI 飲食建議摘要」（`#nutrition-ai-summary`，同樣有既有 fallback 文字）＋誠實標註＋
+    「查看完整建議」按鈕，導向 `case-overview-section`（不是舊的 `diet-advice-section`，
+    那個頁面已經刪除了）
+
+### 2. 個案列表（case-list-section）
+- 表格欄位：個案姓名／授權範圍／授權期限／狀態／操作
+- 資料來源：`getAuthorizationsByRole("nutritionist")`，逐筆顯示 `dataScopes.join("、")` 作為授權範圍，
+  `expiredAt` 作為授權期限，`isAuthorizationValid(auth) ? "有效" : "已過期/已撤回"` 作為狀態
+
+### 3. 個案總覽（case-overview-section）★本次重新規劃的核心頁面
+每位被授權的個案一張卡片，卡片內容全部整合在一起、不用切換頁面：
+- 個案姓名 + 授權狀態標籤
+- 依授權欄位顯示（未授權的欄位完全不出現）：BMI／體重／血壓（收縮壓/舒張壓）／營養風險等級
+- AI 飲食建議文字（取自 `runAIAnalysis(patientId).dietAdvice`）
+- 若個案無任何有效授權資料，顯示「尚無有效授權資料」的空狀態卡片，不要顯示錯誤
+- 只有**一個** panel id（例如 `case-overview-panel`）承載這份合併內容，不要把同一份 render
+  結果同時 setHTML 到多個 id
+
+### 4. 體重趨勢（weight-trend-section）
+- 個案數通常大於一位，需要「個案切換下拉選單」：一個 `<select>`（例如
+  `nutrition-weight-case-select`），選項為所有「授權包含體重」的個案，`onchange` 時重新畫圖
+- 圖表 canvas（例如 `nutrition-weight-chart`）用 `drawLineChart()` 畫選定個案的體重趨勢
+  （資料來源 `recordsByAccount(選定的patientId)`），不要用 Chart.js
+- 沒有任何授權包含體重的個案時，下拉選單顯示「尚無已授權個案」，圖表區顯示 `drawLineChart()`
+  內建的「尚無資料」空狀態即可，不需要自己另外處理
+
+### 5. 營養紀錄（nutrition-record-section）
+- 新增營養紀錄表單：個案姓名（文字輸入，id=`nutrition-case`）、建議標題（id=`nutrition-title`）、
+  建議內容（textarea，id=`nutrition-content`），submit 呼叫 `addNutritionRecord(event)`
+  （已驗證此函式會讀取這三個 id 的值並寫入 `state.nutritionRecords`，欄位 id 必須完全照抄）
+- 營養紀錄列表：`#nutrition-record-list`，顯示所有已新增的營養紀錄，最新在最上面
+
+### 6. 通知中心（notification-section）
+- 通知列表（timeline 樣式），資料來自 `state.notifications`
+
+────────────────────────────────────────────────────────────────
+【明確要刪除、不要包含在營養師端的內容】
+────────────────────────────────────────────────────────────────
+
+- ❌ 「BMI分析」「血壓提醒」「AI飲食建議」三個獨立頁與導覽項目：內容已完全合併進「個案總覽」，
+  不要重新拆成三個入口，也不要讓同一份 render 結果對應到多個 panel id
+- ❌ 固定單一 canvas id `nutrition-weight-chart` 畫「目前登入帳號自己」體重的舊邏輯：那是
+  舊架構的既有缺陷（沒有個案選擇機制），這次改成前面規格描述的「可切換個案」版本
+- ❌ 資料安全與隱私保護中心、Care Team 協作中心：這兩個功能已經被清空成空函式，是既定事實，
+  不是還要決定的開放問題，不要重建
+- ❌ 任何跟「報名系統」「運動訓練」「FHIR 技術細節」「帳號管理」相關的內容：不屬於營養師角色
+
+────────────────────────────────────────────────────────────────
+【驗收檢查清單】
+────────────────────────────────────────────────────────────────
+
+□ nav-menu 剛好 3 個一級群組（首頁、個案管理▾、營養紀錄），個案管理下只有 3 個子項目，展開共 5 個入口
+□ 「個案總覽」頁面確實只有一個 panel id 承載 BMI+血壓+飲食建議的合併內容，不是同一份 html 塞進多個 id
+□ 任何一個個案欄位顯示前都先過 `authAllows(auth, scope)` 檢查，未授權欄位不顯示
+□ 未過期/未撤回授權才算數（用 `isAuthorizationValid()` 過濾，不要自己另外寫過期判斷邏輯）
+□ 體重趨勢頁的個案切換下拉選單能正確反映目前所有「授權包含體重」的個案，切換後圖表正確更新
+□ AI 飲食建議文字有誠實標註為規則式模擬
+□ 所有 innerHTML 寫入的字串都經過 `escapeHTML()`
+□ 通知鈴鐺未讀徽章能正確反映未讀數
+□ 用非 nutritionist 角色帳號或未登入狀態直接開啟 app-nutrition.html，應該立刻被導回 index.html
+□ 沒有出現「BMI分析」「血壓提醒」「AI飲食建議」三個獨立頁、安全中心、Care Team 的任何殘留程式碼或 nav 項目
+□ 深色模式、通知鈴鐺、登出、demo 重置流程與其他三個角色頁行為一致
+
+────────────────────────────────────────────────────────────────
+【本次實作備註（2026-07-10）】
+────────────────────────────────────────────────────────────────
+
+依本規格已產出新版 `app-nutrition.html`，並對 `shared.js` 做了以下最小必要修改：
+1. `renderCaseNutritionData()`：原本把同一份 `html` 變數 `setHTML()` 到三個 id
+   （`bmi-analysis-panel`／`diet-advice-panel`／`blood-pressure-panel`），改成只 `setHTML()`
+   到單一新 id `case-overview-panel`。
+2. `renderNutritionViews()`：新增呼叫 `renderNutritionWeightTrend()`。
+3. 新增 `renderNutritionWeightTrend()` 函式：讀取「授權包含體重」的個案清單，動態產生
+   `<select id="nutrition-weight-case-select">` 的選項並保留使用者目前選擇，用
+   `drawLineChart("nutrition-weight-chart", recordsByAccount(選定id).slice(-30), [...])` 畫圖。
+4. `renderCharts()`：移除原本對固定 canvas id `nutrition-weight-chart`（畫「目前登入帳號自己」
+   體重）的遺留呼叫，改由上述新函式接手。
+
+以上修改範圍侷限在「僅營養師角色會呼叫到」的函式，不影響使用者／教練／管理員三個頁面的行為。

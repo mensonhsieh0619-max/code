@@ -415,73 +415,9 @@ function markNotificationsAsRead() {
 // ─── Render All ───────────────────────────────────────────────────────
 
 function ensureProfileUI() {
+    // profile-section 已經是 app-user.html 的靜態內容，不需要在執行期插入 DOM，
+    // 這裡只保留「依個人資料同步身高輸入框限制」這個真正需要在渲染期執行的行為。
     if (getCurrentRole() !== "user") return;
-    const pageContent = document.querySelector(".page-content");
-    if (pageContent && !document.getElementById("profile-section")) {
-        const section = document.createElement("section");
-        section.id = "profile-section";
-        section.className = "content-section";
-        section.innerHTML = `
-            <h2 class="section-title">個人資料設定</h2>
-            <div class="card form-card profile-card">
-                <form onsubmit="submitProfileSettings(event)">
-                    <div class="form-row-2">
-                        <div class="form-group">
-                            <label for="profile-name">姓名</label>
-                            <input id="profile-name" type="text" required />
-                        </div>
-                        <div class="form-group">
-                            <label for="profile-gender">性別</label>
-                            <select id="profile-gender" required>
-                                <option value="male">男</option>
-                                <option value="female">女</option>
-                                <option value="other">其他</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="form-row-3">
-                        <div class="form-group">
-                            <label for="profile-birthday">生日</label>
-                            <input id="profile-birthday" type="date" required />
-                        </div>
-                        <div class="form-group">
-                            <label for="profile-height">身高 cm</label>
-                            <input id="profile-height" type="number" min="80" max="230" step="0.1" required />
-                        </div>
-                        <div class="form-group">
-                            <label for="profile-target-weight">目標體重 kg</label>
-                            <input id="profile-target-weight" type="number" min="30" max="250" step="0.1" required />
-                        </div>
-                    </div>
-                    <div class="form-row-2">
-                        <div class="form-group">
-                            <label for="profile-daily-step-goal">每日步數目標</label>
-                            <input id="profile-daily-step-goal" type="number" min="0" max="100000" step="100" required />
-                        </div>
-                        <div class="form-group">
-                            <label for="profile-weekly-exercise-goal">每週運動目標分鐘數</label>
-                            <input id="profile-weekly-exercise-goal" type="number" min="0" max="2000" step="5" required />
-                        </div>
-                    </div>
-                    <p class="profile-help">BMI 計算主要使用此處的身高設定；單筆健康資料若有身高，會優先使用該筆資料。</p>
-                    <button type="submit" class="primary-button">儲存個人資料</button>
-                </form>
-            </div>
-        `;
-        const healthInput = document.getElementById("health-input-section");
-        safeInsertBefore(pageContent, section, healthInput || pageContent.firstChild);
-    }
-    const navMenu = document.getElementById("nav-menu");
-    if (navMenu && !navMenu.querySelector('[data-section="profile-section"]')) {
-        const button = document.createElement("button");
-        button.className = "nav-btn";
-        button.dataset.section = "profile-section";
-        button.type = "button";
-        button.innerHTML = '<i class="bi bi-person-gear"></i> 個人資料設定';
-        button.onclick = () => showSection("profile-section");
-        const dashboardButton = navMenu.querySelector('[data-section="user-dashboard-section"]');
-        dashboardButton?.insertAdjacentElement("afterend", button);
-    }
     const heightInput = document.getElementById("health-height");
     if (heightInput) {
         heightInput.min = "80";
@@ -661,17 +597,15 @@ function renderCoachDashboard() { updateCoachDashboard(); }
 function renderNutritionDashboard() { updateNutritionDashboard(); }
 
 function renderAdminDashboard() {
+    const validAuthCount = state.authorizations.filter(isAuthorizationValid).length;
     setHTML("admin-dashboard-cards", [
-        kpi("使用者總數", state.accounts.length, "帳號"),
+        kpi("帳號總數", state.accounts.length, "個"),
+        kpi("有效授權數", validAuthCount, "筆"),
         kpi("FHIR Resources", state.healthRecords.length * 7, "筆"),
-        kpi("Observation", state.healthRecords.length * 7, "筆"),
-        kpi("授權紀錄", state.authorizations.length, "筆"),
         kpi("區塊鏈紀錄", state.blockchainLogs.length, "筆"),
-        kpi("報名總數", state.registrations.length, "筆"),
-        kpi("待審核報名", state.registrations.filter((i) => i.status === "待審核").length, "筆"),
         kpi("系統通知", state.notifications.length, "則")
     ].join(""));
-    setHTML("admin-system-summary", `<p>系統保留 localStorage Demo 資料，包含 FHIR、授權、區塊鏈紀錄、通知與競賽報名審核。</p>`);
+    setHTML("admin-system-summary", `<p>系統保留 localStorage Demo 資料，包含帳號、FHIR 資源、授權紀錄與區塊鏈紀錄。</p>`);
 }
 
 function renderFHIRViewer() {
@@ -771,28 +705,38 @@ function registrationSummaryItem(label, value) {
 function renderCoachViews() {
     renderAuthorizedStudents();
     renderStudentExerciseData();
-    const validAuths = getAuthorizationsByRole("coach").filter(isAuthorizationValid).filter(hasCoachDataScope);
-    setHTML("training-advice-panel", validAuths.map((auth) => {
-        const analysis = runAIAnalysis(authPatientId(auth));
-        return `<div class="card auth-data-card"><h3>${escapeHTML(auth.patientName || patientName(auth))}</h3><p>${escapeHTML(analysis.exerciseAdvice)}</p></div>`;
-    }).join("") || `<div class="card empty">尚未取得學員授權資料。</div>`);
     setHTML("training-record-list", state.trainingRecords.map((i) => `<div class="record-card"><strong>${escapeHTML(i.studentName)}：${escapeHTML(i.title)}</strong><p>${escapeHTML(i.content)}</p><small class="muted">${i.createdAt}</small></div>`).join(""));
 }
 
 function renderNutritionViews() {
     renderAuthorizedCases();
     renderCaseNutritionData();
+    renderNutritionWeightTrend();
     setHTML("nutrition-record-list", state.nutritionRecords.map((i) => `<div class="record-card"><strong>${escapeHTML(i.caseName)}：${escapeHTML(i.title)}</strong><p>${escapeHTML(i.content)}</p><small class="muted">${i.createdAt}</small></div>`).join(""));
+}
+
+function renderNutritionWeightTrend() {
+    const select = document.getElementById("nutrition-weight-case-select");
+    if (!select) return;
+    const auths = getAuthorizationsByRole("nutritionist").filter(isAuthorizationValid).filter((auth) => authAllows(auth, "體重"));
+    const options = auths.map((auth) => ({ id: authPatientId(auth), name: auth.patientName || patientName(auth) }));
+    const previous = select.value;
+    select.innerHTML = options.length
+        ? options.map((o) => `<option value="${escapeHTML(o.id)}">${escapeHTML(o.name)}</option>`).join("")
+        : `<option value="">尚無已授權個案</option>`;
+    const selectedId = options.some((o) => o.id === previous) ? previous : (options[0]?.id || "");
+    select.value = selectedId;
+    const records = selectedId ? recordsByAccount(selectedId).slice(-30) : [];
+    drawLineChart("nutrition-weight-chart", records, [{ label: "體重", value: (r) => r.weight, unit: "kg", color: "#16a34a", status: () => "趨勢追蹤" }]);
 }
 
 function renderAdminViews() {
     setHTML("account-management-body", state.accounts.map((a) => `
-        <tr><td>${escapeHTML(a.name)}</td><td>${escapeHTML(a.username)}</td><td>${escapeHTML(a.email)}</td><td>${ROLES[a.role]}</td><td>${statusPill(a.status === "active" ? "啟用" : "停用", a.status === "active" ? "active" : "disabled")}</td>
+        <tr><td>${escapeHTML(a.name)}</td><td>${escapeHTML(a.username)}</td><td>${escapeHTML(a.email)}</td><td>${ROLES[a.role]}</td><td>${escapeHTML(a.organization)}</td><td>${escapeHTML(a.phone)}</td><td>${statusPill(a.status === "active" ? "啟用" : "停用", a.status === "active" ? "active" : "disabled")}</td>
         <td><button class="mini-button" onclick="toggleAccount('${a.id}')">${a.status === "active" ? "停用" : "啟用"}</button></td></tr>
     `).join(""));
-    setHTML("user-management-body", state.accounts.map((a) => `<tr><td>${escapeHTML(a.name)}</td><td>${escapeHTML(a.email)}</td><td>${ROLES[a.role]}</td><td>${escapeHTML(a.organization)}</td><td>${escapeHTML(a.phone)}</td></tr>`).join(""));
     setHTML("fhir-record-list", state.accounts.filter((a) => a.role === "user").map((a) => `<div class="card"><div style="display:flex;justify-content:space-between;align-items:center"><h3>${escapeHTML(a.name)}</h3><button class="secondary-button" onclick="downloadFHIRForAccount('${a.id}')">下載 .json</button></div><pre class="code-block">${escapeHTML(JSON.stringify(generateFHIRBundle(a.id), null, 2))}</pre></div>`).join(""));
-    setHTML("observation-record-panel", `<div class="kpi-grid">${kpi("健康紀錄", state.healthRecords.length, "筆")}${kpi("Observation", state.healthRecords.length * 7, "筆")}${kpi("使用者", state.accounts.filter((a) => a.role === "user").length, "人")}</div>`);
+    setHTML("fhir-record-kpis", `<div class="kpi-grid">${kpi("健康紀錄", state.healthRecords.length, "筆")}${kpi("Observation", state.healthRecords.length * 7, "筆")}${kpi("使用者", state.accounts.filter((a) => a.role === "user").length, "人")}</div>`);
     setHTML("authorization-record-body", state.authorizations.map((auth) => {
         const n = normalizeAuthorization(auth);
         return `<tr><td>${escapeHTML(n.patientName)}</td><td>${escapeHTML(n.targetName || ROLES[n.targetRole] || n.targetRole)}</td><td>${scopeBadges(n.dataScopes)}</td><td><code>${escapeHTML(n.hash)}</code><br>${authorizationStatusBadge(n)}</td><td>${n.createdAt}</td></tr>`;
@@ -1025,18 +969,16 @@ function renderAdminCharts() {
     const roleCounts = ["user", "coach", "nutritionist", "admin"].map((r) => state.accounts.filter((a) => a.role === r).length);
     createDoughnutChart("chart-admin-roles", { labels: ["一般使用者", "健身教練", "營養師", "系統管理員"], data: roleCounts, colors: ["#0f766e", "#ea580c", "#16a34a", "#4f46e5"] });
 
-    const regBuckets = { "待審核": 0, "審核通過": 0, "需補件": 0, "退件": 0 };
-    state.registrations.forEach((r) => { if (r.status in regBuckets) regBuckets[r.status]++; });
-    createDoughnutChart("chart-admin-reg", { labels: Object.keys(regBuckets), data: Object.values(regBuckets), colors: ["#f59e0b", "#16a34a", "#2563eb", "#dc2626"] });
+    const validAuth = state.authorizations.filter(isAuthorizationValid).length;
+    const authChartData = { labels: ["有效授權", "已過期"], data: [validAuth || 0, (state.authorizations.length - validAuth) || 0], colors: ["#16a34a", "#94a3b8"] };
+    createDoughnutChart("chart-admin-dashboard-auth", authChartData);
+    createDoughnutChart("chart-admin-auth", authChartData);
 
     const userCount = state.accounts.filter((a) => a.role === "user").length;
     createBarChartJS("chart-admin-fhir", {
         labels: ["Patient", "Observation", "Practitioner", "Bundle"],
         datasets: [{ label: "資源數量", data: [userCount, state.healthRecords.length * 7, 1, userCount], colors: ["#0f766e", "#2563eb", "#db2777", "#f59e0b"] }]
     });
-
-    const validAuth = state.authorizations.filter(isAuthorizationValid).length;
-    createDoughnutChart("chart-admin-auth", { labels: ["有效授權", "已過期"], data: [validAuth || 0, (state.authorizations.length - validAuth) || 0], colors: ["#16a34a", "#94a3b8"] });
 }
 
 function renderCoachCharts() {
@@ -1175,12 +1117,13 @@ function renderAuthorizedStudents() {
 
 function renderStudentExerciseData() {
     const auths = getAuthorizationsByRole("coach").filter(isAuthorizationValid).filter(hasCoachDataScope);
-    setHTML("student-exercise-panel", auths.map((auth) => {
+    setHTML("student-overview-panel", auths.map((auth) => {
         const patientId = authPatientId(auth);
         const latest = latestRecord(patientId);
         const analysis = runAIAnalysis(patientId);
         if (!latest) return `<div class="card empty">尚未取得學員授權資料。</div>`;
         const achievement = Math.min(100, Math.round((analysis.weeklyExercise / 150) * 100));
+        const showHeart = authAllows(auth, "心率");
         return `
             <div class="card auth-data-card">
                 <h3>${escapeHTML(auth.patientName || patientName(auth))}</h3>
@@ -1188,12 +1131,19 @@ function renderStudentExerciseData() {
                     ${authAllows(auth, "步數") ? authMetric("步數", latest.steps?.toLocaleString() || "--", "steps") : ""}
                     ${authAllows(auth, "運動紀錄") ? authMetric("運動時間", `${latest.exercise ?? "--"}`, "分鐘") : ""}
                     ${authAllows(auth, "運動紀錄") ? authMetric("消耗熱量", `${estimateCalories(latest)}`, "kcal") : ""}
-                    ${authAllows(auth, "心率") ? authMetric("心率", `${latest.heartRate ?? "--"}`, "bpm") : ""}
+                    ${showHeart ? authMetric("心率", `${latest.heartRate ?? "--"}`, "bpm") : ""}
                     ${authAllows(auth, "運動紀錄") ? authMetric("運動達成率", `${achievement}%`, "每週 150 分鐘") : ""}
                 </div>
+                ${showHeart ? `<div class="chart-card student-mini-chart"><h4>心率趨勢</h4><canvas id="student-heart-chart-${escapeHTML(patientId)}" height="120"></canvas></div>` : ""}
                 <div class="advice-item"><strong>AI 訓練建議</strong><p>${escapeHTML(analysis.exerciseAdvice)}</p></div>
             </div>`;
     }).join("") || `<div class="card empty">尚未取得學員授權資料。</div>`);
+    auths.forEach((auth) => {
+        if (!authAllows(auth, "心率")) return;
+        const patientId = authPatientId(auth);
+        const records = recordsByAccount(patientId).slice(-14);
+        drawLineChart(`student-heart-chart-${patientId}`, records, [{ label: "心率", value: (r) => r.heartRate, unit: "bpm", color: "#db2777", status: heartRateStatus }]);
+    });
 }
 
 function renderAuthorizedCases() {
@@ -1231,9 +1181,7 @@ function renderCaseNutritionData() {
                 <div class="advice-item"><strong>AI 飲食建議</strong><p>${escapeHTML(analysis.dietAdvice)}</p></div>
             </div>`;
     }).join("") || `<div class="card empty">尚未取得個案授權資料。</div>`;
-    setHTML("bmi-analysis-panel", html);
-    setHTML("diet-advice-panel", html);
-    setHTML("blood-pressure-panel", html);
+    setHTML("case-overview-panel", html);
 }
 
 // ─── Auth helpers ─────────────────────────────────────────────────────
@@ -1377,9 +1325,6 @@ function renderCharts() {
         { label: "運動時間", value: (r) => r.exercise, unit: "分鐘", color: "#16a34a", status: exerciseStatus },
         { label: "熱量消耗", value: (r) => estimateCalories(r), unit: "kcal", color: "#db2777", status: () => "估算" }
     ]);
-    const allRecords = recordsByAccount(activeUserId());
-    drawLineChart("student-heart-chart", allRecords, [{ label: "心率", value: (r) => r.heartRate, unit: "bpm", color: "#db2777", status: heartRateStatus }]);
-    drawLineChart("nutrition-weight-chart", allRecords, [{ label: "體重", value: (r) => r.weight, unit: "kg", color: "#16a34a", status: () => "趨勢追蹤" }]);
 }
 
 function drawLineChart(canvasId, records, seriesConfig) {
@@ -2346,73 +2291,14 @@ function aiLevelFromScore(score) {
 }
 
 function ensureHealthFeatureUI() {
-    const section = document.getElementById("health-input-section");
-    if (!section || section.dataset.healthUpgradeFinal === "true") return;
-    section.dataset.healthUpgradeFinal = "true";
-    section.innerHTML = `
-        <div class="ai-gradient-header"><div><span>Health Data</span><h2>健康資料</h2><p>填寫今日量測、活動與生活習慣，送出後產生健康摘要、AI 分析、FHIR 與趨勢資料。</p></div></div>
-        <div class="card form-card health-form-section">
-            <form id="health-data-form" onsubmit="submitHealthData(event)">
-                <h3 class="health-section-title">基本量測</h3>
-                <div class="health-form-grid">
-                    <div class="form-group"><label for="health-date">日期</label><input id="health-date" type="date" required /></div>
-                    <div class="form-group"><label for="health-height">身高 cm</label><input id="health-height" type="number" min="80" max="230" step="0.1" required oninput="updateBMIPreview()" /></div>
-                    <div class="form-group"><label for="health-weight">體重 kg</label><input id="health-weight" type="number" min="20" max="250" step="0.1" required oninput="updateBMIPreview()" /></div>
-                    <div class="bmi-preview-card"><span>BMI 自動計算</span><strong id="health-bmi-preview">--</strong><small id="health-bmi-category">輸入身高與體重後顯示</small></div>
-                </div>
-                <h3 class="health-section-title">血壓與心率</h3>
-                <div class="health-form-grid">
-                    <div class="form-group"><label for="health-systolic">收縮壓 systolic</label><input id="health-systolic" type="number" min="70" max="220" required /></div>
-                    <div class="form-group"><label for="health-diastolic">舒張壓 diastolic</label><input id="health-diastolic" type="number" min="40" max="140" required /></div>
-                    <div class="form-group"><label for="health-heart-rate">心率 bpm</label><input id="health-heart-rate" type="number" min="40" max="180" required /></div>
-                </div>
-                <h3 class="health-section-title">運動資料</h3>
-                <div class="health-form-grid">
-                    <div class="form-group"><label for="health-steps">今日步數</label><input id="health-steps" type="number" min="0" max="100000" required /></div>
-                    <div class="form-group"><label for="health-exercise-type">運動類型</label><select id="health-exercise-type"><option>慢跑</option><option>快走</option><option>重訓</option><option>游泳</option><option>騎車</option><option>瑜珈</option><option>球類</option><option>休息</option></select></div>
-                    <div class="form-group"><label for="health-exercise">運動時間 min</label><input id="health-exercise" type="number" min="0" max="600" required /></div>
-                    <div class="form-group"><label for="health-calories">消耗熱量 kcal</label><input id="health-calories" type="number" min="0" max="5000" /></div>
-                </div>
-                <h3 class="health-section-title">生活習慣</h3>
-                <div class="health-form-grid">
-                    <div class="form-group"><label for="health-sleep">睡眠小時</label><input id="health-sleep" type="number" min="0" max="24" step="0.5" required /></div>
-                    <div class="form-group"><label for="health-water">飲水 ml</label><input id="health-water" type="number" min="0" max="10000" step="50" /></div>
-                    <div class="form-group"><label for="health-stress">壓力 1-5</label><input id="health-stress" type="number" min="1" max="5" required /></div>
-                    <div class="form-group"><label for="health-diet">飲食狀態</label><select id="health-diet" required><option>正常</option><option>高鹽飲食</option><option>高糖飲食</option><option>高油飲食</option><option>蛋白質不足</option></select></div>
-                </div>
-                <div class="form-actions"><button type="submit" class="primary-button">儲存健康資料</button></div>
-            </form>
-        </div>
-        <section id="health-record-list" class="card">
-            <h3 class="health-section-title">最近健康資料</h3>
-            <div class="health-record-table-wrapper"><table class="health-record-table"><thead><tr><th>日期</th><th>血壓</th><th>體重</th><th>BMI</th><th>心率</th><th>步數</th><th>運動</th><th>睡眠</th><th>狀態</th><th>操作</th></tr></thead><tbody id="health-record-table-body"></tbody></table></div>
-        </section>`;
-    const today = new Date();
-    setInputValue("health-date", `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`);
-    syncHealthHeightInput(true);
-    updateBMIPreview();
+    // health-input-section 已經是 app-user.html 的靜態內容，不需要在執行期插入 DOM。
 }
 
 
 function ensureAIAnalysisMarkup() {
-    const panel = document.getElementById("ai-health-panel");
-    if (!panel) return false;
-    panel.innerHTML = `
-        <div class="ai-dashboard">
-            <div class="ai-gradient-header"><div><span>AI Health Dashboard</span><h2>AI 健康分析</h2><p id="ai-summary">目前尚無健康資料，請先新增健康紀錄以產生 AI 分析。</p></div><span id="ai-risk-level" class="ai-status-badge muted">No Data</span></div>
-            <div class="ai-dashboard-grid"><article class="ai-score-card"><div class="ai-gauge" style="--score:0"><div class="ai-gauge-inner"><strong id="ai-score-value">--</strong><span>/100</span></div></div><small>AI 健康分數</small></article><article class="ai-risk-card"><h3>風險標籤</h3><div id="ai-risk-tags" class="ai-risk-chip-list"></div></article></div>
-            <div id="ai-kpi-grid" class="ai-kpi-grid"></div>
-            <div class="ai-advice-grid">
-                <article class="ai-advice-card"><span class="ai-card-icon">${HEALTH_UPGRADE_ICONS.diet}</span><h3>飲食</h3><p id="ai-diet-advice">--</p></article>
-                <article class="ai-advice-card"><span class="ai-card-icon">${HEALTH_UPGRADE_ICONS.exercise}</span><h3>運動</h3><p id="ai-exercise-advice">--</p></article>
-                <article class="ai-advice-card"><span class="ai-card-icon">${HEALTH_UPGRADE_ICONS.sleep}</span><h3>睡眠</h3><p id="ai-sleep-advice">--</p></article>
-                <article class="ai-advice-card"><span class="ai-card-icon">${HEALTH_UPGRADE_ICONS.water}</span><h3>飲水</h3><p id="ai-water-advice">--</p></article>
-                <article class="ai-advice-card"><span class="ai-card-icon">${HEALTH_UPGRADE_ICONS.medical}</span><h3>醫療提醒</h3><p id="ai-medical-advice">--</p></article>
-            </div>
-            <div class="ai-dashboard-grid bottom"><article class="ai-risk-card"><h3>健康風險分析</h3><div class="radar-wrap"><canvas id="ai-risk-radar" width="420" height="320"></canvas></div></article><article class="ai-trend-summary"><h3>AI 趨勢摘要</h3><div id="ai-trend-summary" class="ai-trend-grid"></div></article></div>
-            <article class="ai-timeline-card"><h3>健康建議時間軸</h3><div id="ai-timeline" class="ai-timeline"></div></article>
-        </div>`;
-    return true;
+    // ai-health-panel 已經是 app-user.html 的靜態內容，不需要在執行期插入 DOM，
+    // 這裡只需要回報該容器是否存在，讓呼叫端沿用既有的 if (!ensureAIAnalysisMarkup()) return; 判斷式。
+    return Boolean(document.getElementById("ai-health-panel"));
 }
 
 function runAIAnalysis(accountId = activeUserId()) {
@@ -2665,7 +2551,7 @@ function showHealthSummaryModal(record) {
     const bmi = healthStatus(record.bmi, (v) => v >= 18.5 && v < 24, (v) => v >= 24 && v < 27);
     const heart = healthStatus(record.heartRate, (v) => v >= 60 && v <= 100, (v) => v >= 50 && v <= 110);
     const stepsPercent = Math.min(100, Math.round((Number(record.steps || 0) / 10000) * 100));
-    modal.innerHTML = `<div class="registration-modal-panel health-summary-card"><button type="button" class="modal-close-button" onclick="closeHealthSummaryModal()">x</button><div class="summary-success"><i class="bi bi-check-circle-fill"></i> 健康資料已成功儲存</div><h3>本次健康摘要</h3><div class="summary-list">${summaryRow("BMI", record.bmi, bmi.label, bmi.className)}${summaryRow("血壓", `${record.systolic} / ${record.diastolic}`, bp.label, bp.className)}${summaryRow("心率", `${record.heartRate} bpm`, heart.label, heart.className)}${summaryRow("今日步數", Number(record.steps || 0).toLocaleString(), `達成${stepsPercent}%`, stepsPercent >= 80 ? "good" : "warning")}${summaryRow("運動", record.exerciseType, `${record.exercise}分鐘`, "primary")}${summaryRow("睡眠", `${record.sleep} 小時`, "", "primary")}</div><p class="summary-ai-done">AI 已完成分析：${escapeHTML(analysis.riskLevel)}</p><div class="summary-actions"><button type="button" class="primary-button" onclick="closeHealthSummaryModal(); showSection('ai-health-section')">查看 AI 報告</button><button type="button" class="secondary-button" onclick="closeHealthSummaryModal(); showSection('fhir-viewer-section')">查看 FHIR</button></div></div>`;
+    modal.innerHTML = `<div class="registration-modal-panel health-summary-card"><button type="button" class="modal-close-button" onclick="closeHealthSummaryModal()">x</button><div class="summary-success"><i class="bi bi-check-circle-fill"></i> 健康資料已成功儲存</div><h3>本次健康摘要</h3><div class="summary-list">${summaryRow("BMI", record.bmi, bmi.label, bmi.className)}${summaryRow("血壓", `${record.systolic} / ${record.diastolic}`, bp.label, bp.className)}${summaryRow("心率", `${record.heartRate} bpm`, heart.label, heart.className)}${summaryRow("今日步數", Number(record.steps || 0).toLocaleString(), `達成${stepsPercent}%`, stepsPercent >= 80 ? "good" : "warning")}${summaryRow("運動", record.exerciseType, `${record.exercise}分鐘`, "primary")}${summaryRow("睡眠", `${record.sleep} 小時`, "", "primary")}</div><p class="summary-ai-done">AI 已完成分析：${escapeHTML(analysis.riskLevel)}</p><div class="summary-actions"><button type="button" class="primary-button" onclick="closeHealthSummaryModal(); showSection('ai-health-section')">查看 AI 報告</button><button type="button" class="secondary-button" onclick="closeHealthSummaryModal(); showSection('health-report-section')">查看健康報告</button></div></div>`;
     modal.classList.add("show");
 }
 
@@ -2867,7 +2753,10 @@ function importWearableData(source) {
 }
 
 function addWearableNotification(source) {
-    addNotification(activeUserId(), "穿戴裝置資料已匯入", `已成功從 ${source} 匯入資料，並轉換為 FHIR Observation。`);
+    // 目前生效的 addNotification() 對「第一個參數是 ACC- 開頭或 "all"」的舊式呼叫有相容判斷，
+    // 舊式呼叫（activeUserId(), title, message）本身可以正常運作；這裡改用新簽名只是為了
+    // 明確標記 type/level/relatedSection，方便通知分類與去重，不是修 bug。
+    addNotification("穿戴裝置資料已匯入", `已成功從 ${source} 匯入資料，並轉換為 FHIR Observation。`, "system", "success", "wearable-import-section", `wearable:${source}:${nowText()}`);
 }
 
 function updateAfterWearableImport() {
@@ -3581,28 +3470,7 @@ function clearFhirSyncLogs() {
 }
 
 function ensureFHIRValidatorUI() {
-    const role = getCurrentRole();
-    if (!["admin"].includes(role)) return;
-    const pageContent = document.querySelector(".page-content");
-    if (!pageContent) return;
-    const navMenu = document.getElementById("nav-menu");
-    if (navMenu && !navMenu.querySelector('[data-section="fhir-validator-section"]')) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "nav-btn";
-        button.dataset.section = "fhir-validator-section";
-        button.innerHTML = '<i class="bi bi-patch-check-fill"></i> FHIR 驗證';
-        button.onclick = () => showSection("fhir-validator-section");
-        const before = navMenu.querySelector('[data-section="security-center-section"]') || navMenu.querySelector('[data-section="notification-section"]') || navMenu.querySelector('[data-section="system-setting-section"]');
-        safeInsertBefore(navMenu, button, before || null);
-    }
-    if (!document.getElementById("fhir-validator-section")) {
-        const section = document.createElement("section");
-        section.id = "fhir-validator-section";
-        section.className = "content-section";
-        const before = document.getElementById("security-center-section") || document.getElementById("notification-section") || document.getElementById("system-setting-section");
-        safeInsertBefore(pageContent, section, before || null);
-    }
+    // fhir-validator-section 已經是 app-admin.html 的靜態內容，不需要在執行期插入 DOM。
 }
 
 var baseRenderAllBeforeFHIRValidator = renderAll;
@@ -4158,28 +4026,7 @@ function predictionChangePercent(item) {
 }
 
 function ensureAIPredictionUI() {
-    const role = getCurrentRole();
-    if (!["user"].includes(role)) return;
-    const pageContent = document.querySelector(".page-content");
-    if (!pageContent) return;
-    const navMenu = document.getElementById("nav-menu");
-    if (navMenu && !navMenu.querySelector('[data-section="ai-prediction-section"]')) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "nav-btn";
-        button.dataset.section = "ai-prediction-section";
-        button.textContent = "AI 風險預測";
-        button.onclick = () => showSection("ai-prediction-section");
-        const before = navMenu.querySelector('[data-section="ai-health-section"]') || navMenu.querySelector('[data-section="fhir-validator-section"]') || navMenu.querySelector('[data-section="notification-section"]');
-        safeInsertBefore(navMenu, button, before || null);
-    }
-    if (!document.getElementById("ai-prediction-section")) {
-        const section = document.createElement("section");
-        section.id = "ai-prediction-section";
-        section.className = "content-section";
-        const before = document.getElementById("ai-health-section") || document.getElementById("fhir-validator-section") || document.getElementById("notification-section");
-        safeInsertBefore(pageContent, section, before || null);
-    }
+    // ai-prediction-section 已經是 app-user.html 的靜態內容，不需要在執行期插入 DOM。
 }
 
 function renderHealthPrediction() {
@@ -4374,29 +4221,10 @@ function generateHealthReport() {
 }
 
 function ensureHealthReportDownloadSection() {
+    // health-report-section 已經是 app-user.html 的靜態內容，不需要在執行期插入 DOM，
+    // 這裡只需要依角色回傳既有的 section（或 null）供呼叫端判斷是否要渲染。
     if (getCurrentRole() !== "user") return null;
-    const pageContent = document.querySelector(".page-content");
-    if (!pageContent) return null;
-    let section = document.getElementById("health-report-section");
-    if (!section) {
-        section = document.createElement("section");
-        section.id = "health-report-section";
-        section.className = "content-section";
-        const before = document.getElementById("fhir-viewer-section") || document.getElementById("ai-prediction-section") || document.getElementById("notification-section");
-        safeInsertBefore(pageContent, section, before || null);
-    }
-    const navMenu = document.getElementById("nav-menu");
-    if (navMenu && !navMenu.querySelector('[data-section="health-report-section"]')) {
-        const button = document.createElement("button");
-        button.type = "button";
-        button.className = "nav-btn";
-        button.dataset.section = "health-report-section";
-        button.innerHTML = '<i class="bi bi-file-earmark-pdf"></i> 健康報告下載';
-        button.onclick = () => showSection("health-report-section");
-        const before = navMenu.querySelector('[data-section="ai-prediction-section"]') || navMenu.querySelector('[data-section="fhir-validator-section"]') || navMenu.querySelector('[data-section="notification-section"]');
-        safeInsertBefore(navMenu, button, before || null);
-    }
-    return section;
+    return document.getElementById("health-report-section") || null;
 }
 
 function renderHealthReport() {
@@ -5396,4 +5224,54 @@ window.removeCareTeamMember = removeCareTeamMember;
 window.addCareTeamMessage = addCareTeamMessage;
 window.renderCareTeam = renderCareTeam;
 window.renderCareTimeline = renderCareTimeline;
+window.renderAll = renderAll;
+
+// Goal progress: compares actual weekly exercise / average daily steps against
+// state.patient.weeklyExerciseGoal / dailyStepGoal (collected on the profile form,
+// previously never read back anywhere).
+function goalProgressRow(label, value, goal, unit) {
+    if (!goal) {
+        return `<div class="goal-progress-item"><div class="goal-progress-head"><span>${escapeHTML(label)}</span><small class="muted">尚未設定目標，可於個人資料設定調整</small></div></div>`;
+    }
+    const percent = Math.round((Number(value) / Number(goal)) * 100);
+    const displayPercent = Math.max(0, Math.min(100, percent));
+    return `
+        <div class="goal-progress-item">
+            <div class="goal-progress-head"><span>${escapeHTML(label)}</span><strong>${Number(value).toLocaleString()} / ${Number(goal).toLocaleString()} ${escapeHTML(unit)}</strong></div>
+            <div class="progress-bar"><div class="progress-bar-fill" style="width:${displayPercent}%"></div></div>
+            <small class="${percent >= 100 ? "good" : "muted"}">${percent >= 100 ? `已達成 ${percent}%` : `${displayPercent}%`}</small>
+        </div>`;
+}
+
+function renderGoalProgress() {
+    const container = document.getElementById("goal-progress-body");
+    if (!container) return;
+    const records = recordsByAccount(activeUserId());
+    if (!records.length) {
+        container.innerHTML = `<p class="empty">尚無健康資料，新增紀錄後即可查看目標達成度。</p>`;
+        return;
+    }
+    const anchor = new Date(records[records.length - 1].date);
+    const cutoff = new Date(anchor);
+    cutoff.setDate(anchor.getDate() - 6);
+    const weekRecords = records.filter((r) => { const d = new Date(r.date); return d >= cutoff && d <= anchor; });
+    const weeklyExerciseMinutes = weekRecords.reduce((sum, r) => sum + Number(r.exercise ?? r.exerciseDuration ?? 0), 0);
+    const avgSteps = weekRecords.length
+        ? Math.round(weekRecords.reduce((sum, r) => sum + Number(r.steps || 0), 0) / weekRecords.length)
+        : 0;
+    const exerciseGoal = Number(state.patient.weeklyExerciseGoal || 0);
+    const stepGoal = Number(state.patient.dailyStepGoal || 0);
+    container.innerHTML = [
+        goalProgressRow("本週運動時間", weeklyExerciseMinutes, exerciseGoal, "分鐘"),
+        goalProgressRow("平均每日步數", avgSteps, stepGoal, "步")
+    ].join("");
+}
+
+var baseRenderAllBeforeGoalProgress = renderAll;
+renderAll = function goalProgressRenderAll() {
+    baseRenderAllBeforeGoalProgress();
+    renderGoalProgress();
+};
+
+window.renderGoalProgress = renderGoalProgress;
 window.renderAll = renderAll;

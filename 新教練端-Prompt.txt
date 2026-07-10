@@ -1,0 +1,218 @@
+====================================================================
+AI Health Platform — 教練端 (app-coach.html) 重新實作 Prompt
+產生日期：2026-07-10（2026-07-10 修訂：套用 20 項改善並已實作完成）
+用途：依此規格從零產出教練端頁面與其角色專屬渲染邏輯。
+狀態：本版本已依規格實作完成 app-coach.html，並對 shared.js 做了對應的最小必要修改
+（見文末【本次實作備註】）。若要重新產生此頁面，此規格仍可作為完整依據。
+====================================================================
+
+────────────────────────────────────────────────────────────────
+【專案背景】
+────────────────────────────────────────────────────────────────
+
+這是一個 FHIR 健康競賽的示範平台，純前端、無建置步驟、無框架，共 4 個角色頁面
+（使用者／教練／營養師／管理員）+ 1 個登入頁 index.html，全部共用同一個
+`shared.js`（核心引擎：帳號、健康資料、AI 分析、FHIR Bundle 產生、授權機制、
+圖表、通知）與 `style.css`。你只需要負責「教練端」這一個角色頁面
+（`app-coach.html`）與它專屬的渲染／互動邏輯，不要重新實作已存在於 shared.js
+的核心功能（登入、AI 規則引擎、授權驗證邏輯等），直接呼叫它們。
+
+────────────────────────────────────────────────────────────────
+【你必須沿用、不要重新定義的共用基礎建設】
+────────────────────────────────────────────────────────────────
+
+1. 頁首標準結構（每個角色頁共用同一套 shell，只有品牌色與導覽項目不同）：
+   - `<head>` 內含 Google Fonts 預連結、`style.css`、`vendor/bootstrap-icons/bootstrap-icons.css`、
+     `manifest.json`、`<meta name="theme-color" content="#ea580c">`（教練端專屬色，橘色）
+   - 深色模式初始化 inline script：
+     `if (localStorage.getItem("ai_health_platform_theme") === "dark") document.documentElement.dataset.theme = "dark";`
+   - 登入守衛 inline script（角色寫死為 "coach"）：
+     ```
+     (function () {
+         try {
+             const s = JSON.parse(localStorage.getItem("ai_health_platform_login_state_v2") || "{}");
+             if (s.loginAt && Date.now() - s.loginAt > 12 * 60 * 60 * 1000) { window.location.href = "index.html"; }
+             if (!s.currentAccount && !s.demoMode) { window.location.href = "index.html"; }
+             if (s.role !== "coach") { window.location.href = "index.html"; }
+         } catch (e) { window.location.href = "index.html"; }
+     })();
+     ```
+   - `<body class="page-body role-coach">`
+   - Navbar：`nav-brand`（圖示 AI + 「AI Health」+ 副標「健身教練」）、漢堡選單按鈕、
+     `nav-menu` 導覽項目（見下方導覽結構）、右側深色模式切換按鈕、通知鈴鐺按鈕（內含
+     `<span class="nav-notif-badge hidden" id="nav-notif-count-icon">` 未讀數徽章，由 shared.js
+     的 `updateNotifBadge()` 在每次 `renderNotifications()` 後自動更新，不需要自己額外呼叫）、
+     使用者選單（頭像 C、姓名、角色標籤、登出按鈕 `logoutAccount()`）
+   - 頁尾共用元件：`#chart-tooltip`、`#toast`
+   - 載入順序：Chart.js CDN → `shared.js`（**不需要**載入 qrcode-generator，教練端沒有 QR 功能）
+     → 初始化 IIFE：`await initDefaultAccounts(); saveState(); showSection('coach-dashboard-section');`
+
+2. 已存在於 shared.js、可直接呼叫的函式（不要重新宣告同名函式）：
+   - `getCurrentRole()`、`currentAccount()`、`loadState()` / `saveState()`
+   - `escapeHTML(str)` — 任何要寫進 innerHTML 的字串都必須先過這個函式（所有 innerHTML 輸出
+     都要套用，這是驗收清單的硬性項目，不是建議）
+   - `nowText()`
+   - `getAuthorizationsByRole("coach")` — 取得目前登入教練被授權的所有學員授權物件
+   - `isAuthorizationValid(auth)` — 過濾出仍有效（未過期、未撤回）的授權
+   - `authAllows(auth, scope)` — 判斷某授權是否包含某資料範圍（例如 `authAllows(auth, "心率")`），
+     渲染每位學員卡片時，任何欄位顯示前都要先過這個檢查，未授權的欄位直接不顯示，不要顯示假資料或 "--"。
+     這裡用到的 scope 字串（步數／運動紀錄／心率）**必須跟使用者端「授權分享」頁 checkbox 的
+     value 完全一致**，否則 `authAllows()` 永遠比對不到，欄位會全部消失
+   - `recordsByAccount(patientId)`、`latestRecord(patientId)` — 用授權物件裡的 `patientId`
+     （透過 `authPatientId(auth)` 取得）查該學員的健康資料
+   - `runAIAnalysis(patientId)` — 取得該學員的 AI 分析結果，`exerciseAdvice` 欄位就是訓練建議文字
+   - `addTrainingRecord(event)` — 已驗證存在且欄位 id 吻合（見下方逐頁規格）
+   - `addNotification(title, message, type, level, relatedSection, sourceId)` — 通知系統目前生效的
+     完整簽名；shared.js 內部另外還有一段相容判斷，讓「第一個參數是帳號 ID 或 `"all"`」的舊式呼叫
+     也能正常運作，兩種寫法都合法，教練端新寫的程式碼建議直接用新簽名（可讀性較好）
+   - `showSection(sectionId)`、`showToast(message)`、`toggleDropdown(el)`、`toggleNavMenu()`、`toggleUserMenu()`、`toggleDarkMode()`
+   - `logoutAccount()`、`loginAccount(event)`、`demoLogin(role)`、`initDefaultAccounts()`
+   - `setHTML(id, html)`、`kpi(title, value, caption)`
+   - `uid(prefix)` — 產生新紀錄 ID（例如訓練紀錄）
+   - `drawLineChart(canvasId, records, seriesConfig)` — 這是既有的 Canvas 折線圖繪製函式（非
+     Chart.js），簽名為 `drawLineChart(canvasId, recordsArray, [{label, value:(r)=>number, unit,
+     color, status:(value,record)=>string}])`；沒有資料時會自動畫「尚無資料」、有資料時會自動掛
+     `attachChartTooltip()`。學員總覽頁的每位學員心率小圖表**用這個函式**，不要用 Chart.js，
+     因為要對應一個學員一個獨立 canvas id，`drawLineChart` 已經是逐一呼叫的設計
+   - 其餘首頁圖表（`chart-coach-achievement`）沿用既有的 Chart.js 型 `createBarChartJS()`，
+     不用自己另外處理，`renderCoachCharts()` 已經寫好
+
+3. state 資料結構（讀寫都要透過 `state` 物件 + `saveState()`）：
+   ```
+   state.accounts          // 帳號資料（含學員姓名等基本資料）
+   state.healthRecords     // 學員健康觀測值，需搭配授權過濾欄位後才能顯示
+   state.authorizations    // 授權分享紀錄，教練端只能讀取 targetRole === "coach" 的項目
+   state.trainingRecords   // 教練寫的訓練紀錄，教練端在此新增/查看
+   state.notifications
+   state.currentAccount, state.role, state.demoMode, state.loginAt
+   ```
+   教練端**不可**讀寫 `state.nutritionRecords`、`state.blockchainLogs`、`state.accounts` 的帳號啟用/停用狀態。
+
+4. 資料慣例：
+   - Timestamp 一律 `YYYY-MM-DD HH:mm`
+   - 永久授權以字串 `"永久授權"` 表示（`isAuthorizationValid()` 已處理，不要自己重新判斷）
+   - 所有 AI 相關內容都要有一行誠實標註，例如「AI 建議為規則式模擬展示，非真實教練意見」
+
+────────────────────────────────────────────────────────────────
+【教練角色定位與核心原則】
+────────────────────────────────────────────────────────────────
+
+教練是被使用者授權查看「運動相關資料」的專業人員：管理自己的學員名單，
+依授權範圍查看學員運動數據，提供訓練建議與紀錄。
+
+**權限鐵律**：教練只能看到「明確授權給教練角色」的學員，且只能看到「該授權勾選的資料欄位」。
+任何一張學員卡片、任何一個數字，渲染前都必須先確認：
+1. 該學員的授權物件存在且 `isAuthorizationValid(auth)` 為 true
+2. 該欄位有被 `authAllows(auth, "欄位名稱")` 允許
+
+**一份內容只能有一個入口**：學員的運動數據、心率趨勢、AI 訓練建議，這三者過去被拆成三個
+不同的導覽項目，但實際上是同一批授權學員的同一份資料，這次全部合併進「學員總覽」一個頁面，
+不要再拆成多個入口。
+
+────────────────────────────────────────────────────────────────
+【導覽結構（3 個一級群組，展開後共 4 個可點擊入口）】
+────────────────────────────────────────────────────────────────
+
+nav-menu 由左到右：
+1. 首頁 → `coach-dashboard-section`
+2. 學員管理 ▾（下拉選單）
+   - 學員列表 → `student-list-section`
+   - 學員總覽 → `student-overview-section`（合併後的新頁面，取代舊的「運動紀錄」+「心率趨勢」+「AI訓練建議」三個頁面）
+3. 訓練紀錄 → `training-record-section`
+
+nav-right：深色模式切換、通知鈴鐺（`notification-section`，含未讀徽章）、使用者選單（登出）
+
+────────────────────────────────────────────────────────────────
+【逐頁規格】
+────────────────────────────────────────────────────────────────
+
+### 1. 首頁（coach-dashboard-section）
+- role-hero 橫幅：歡迎文字 + 副標
+- KPI 卡片列（`#coach-dashboard-cards`）：既有 `updateCoachDashboard()` 已產生「被授權學員數／
+  有效授權數／今日活躍學員／心率異常提醒／平均運動達成率」5 張卡，直接沿用
+- 圖表：學員運動達成率（每週 150 分鐘目標），`#chart-coach-achievement`，Chart.js 長條圖，橫跨整列寬度
+- 兩張摘要卡：
+  - 「趨勢摘要」（`#coach-trend-summary`）：既有函式已內建「尚未取得學員授權資料。」這類 fallback
+    文字，沒有授權時會自動顯示，不需要自己另外設計空狀態文案
+  - 「AI 訓練建議摘要」（`#coach-ai-summary`，同樣有既有 fallback 文字）＋誠實標註＋
+    「查看完整建議」按鈕，導向 `student-overview-section`（不是舊的 `training-advice-section`，
+    那個頁面已經刪除了）
+
+### 2. 學員列表（student-list-section）
+- 表格欄位：學員姓名／授權範圍／授權期限／狀態／操作
+- 資料來源：`getAuthorizationsByRole("coach")`，逐筆顯示 `dataScopes.join("、")` 作為授權範圍，
+  `expiredAt` 作為授權期限，`isAuthorizationValid(auth) ? "有效" : "已過期/已撤回"` 作為狀態
+
+### 3. 學員總覽（student-overview-section）★本次重新規劃的核心頁面
+每位被授權的學員一張卡片，卡片內容全部整合在一起、不用切換頁面：
+- 學員姓名 + 授權狀態標籤
+- 依授權欄位顯示（未授權的欄位完全不出現，不要顯示 "未授權" 或空值）：
+  步數／運動時間／消耗熱量／心率／達成率（達成率 = 本週運動時間 / 150 分鐘目標）
+- 心率趨勢小圖表：僅在該學員的授權包含「心率」時才顯示，canvas id 建議用
+  `student-heart-chart-{patientId}`（每位學員一個獨立 id），資料來源
+  `recordsByAccount(patientId)` 取最近筆數（建議 `.slice(-14)`），用 `drawLineChart()` 畫，
+  不要用 Chart.js（理由見上方【共用基礎建設】的函式說明）
+- AI 訓練建議文字（取自 `runAIAnalysis(patientId).exerciseAdvice`）
+- 若學員無任何有效授權資料，顯示「尚無有效授權資料」的空狀態卡片，不要顯示錯誤
+
+### 4. 訓練紀錄（training-record-section）
+- 新增訓練紀錄表單：學員姓名（文字輸入，id=`training-student`）、訓練標題（id=`training-title`）、
+  訓練內容（textarea，id=`training-content`），submit 呼叫 `addTrainingRecord(event)`
+  （已驗證此函式會讀取這三個 id 的值並寫入 `state.trainingRecords`，欄位 id 必須完全照抄）
+- 訓練紀錄列表：`#training-record-list`，顯示所有已新增的訓練紀錄，最新在最上面
+
+### 5. 通知中心（notification-section）
+- 通知列表（timeline 樣式），資料來自 `state.notifications`
+
+────────────────────────────────────────────────────────────────
+【明確要刪除、不要包含在教練端的內容】
+────────────────────────────────────────────────────────────────
+
+- ❌ 「AI 訓練建議」獨立頁（原 `training-advice-section`）：內容已完全併入「學員總覽」卡片內，
+  不要再做成獨立導覽項目或獨立 section
+- ❌ 「學員心率趨勢」獨立頁（原 `student-heart-rate-section`，固定單一 canvas id
+  `student-heart-chart`）：心率趨勢圖已改為「學員總覽」卡片內、每位學員一個獨立 canvas 的小圖表，
+  不要再做成獨立頁面，也不要沿用那個固定的舊 canvas id（該 id 原本的邏輯其實是畫「目前登入帳號自己」
+  的心率，不是特定學員的心率，是舊架構的既有缺陷，這次不要延續）
+- ❌ 資料安全與隱私保護中心、Care Team 協作中心：這兩個功能已經被清空成空函式（`ensureSecurityCenterUI()`
+  / `ensureCareTeamUI()` 內部只剩一行「已停用」註解），是既定事實，不是還要決定的開放問題，不要重建
+- ❌ 任何跟「報名系統」「營養」「FHIR 技術細節」「帳號管理」相關的內容：不屬於教練角色
+
+────────────────────────────────────────────────────────────────
+【驗收檢查清單】
+────────────────────────────────────────────────────────────────
+
+□ nav-menu 剛好 3 個一級群組（首頁、學員管理▾、訓練紀錄），學員管理下只有 2 個子項目，展開共 4 個入口
+□ 「學員總覽」頁面確實把運動數據 + 心率趨勢 + AI建議整合進同一張卡片，且卡片數量 = 有效授權學員數
+□ 任何一個學員欄位顯示前都先過 `authAllows(auth, scope)` 檢查，未授權欄位不顯示
+□ 未過期/未撤回授權才算數（用 `isAuthorizationValid()` 過濾，不要自己另外寫過期判斷邏輯）
+□ AI 訓練建議文字有誠實標註為規則式模擬
+□ 所有 innerHTML 寫入的字串都經過 `escapeHTML()`
+□ 通知鈴鐺未讀徽章能正確反映未讀數（`updateNotifBadge()` 已自動處理，不需要額外程式碼）
+□ 用非 coach 角色帳號或未登入狀態直接開啟 app-coach.html，應該立刻被導回 index.html（測試登入守衛）
+□ 沒有出現「AI訓練建議」「學員心率趨勢」獨立頁、安全中心、Care Team 的任何殘留程式碼或 nav 項目
+□ 深色模式、通知鈴鐺、登出、demo 重置流程與其他三個角色頁行為一致
+
+────────────────────────────────────────────────────────────────
+【本次實作備註（2026-07-10）】
+────────────────────────────────────────────────────────────────
+
+依本規格已產出新版 `app-coach.html`，並對 `shared.js` 做了以下最小必要修改：
+1. `renderCoachViews()`：移除對已刪除的 `training-advice-panel` 的 `setHTML()` 呼叫。
+2. `renderStudentExerciseData()`：target 從舊的 `student-exercise-panel` 改為新的
+   `student-overview-panel`；卡片內容新增「授權包含心率時才出現的小圖表 canvas」
+   （id 為 `student-heart-chart-{patientId}`）；`setHTML()` 之後新增一段迴圈，對每位有心率
+   授權的學員呼叫 `drawLineChart()` 畫圖。
+3. `renderCharts()`（原本服務使用者端健康趨勢頁的函式）裡有兩行不屬於它職責範圍的遺留呼叫，
+   分別對固定 canvas id `student-heart-chart`、`nutrition-weight-chart` 畫「目前登入帳號自己」
+   的資料——這兩個 id 已經被教練端的逐學員 canvas 與營養師端新的可切換個案圖表取代，故直接移除
+   這兩行遺留呼叫。
+
+**重要更正**：本文件先前版本的「20 項改善」清單中，曾誤判 `addNotification` 有簽名不相容的
+「真實 bug」。深入追查後發現 shared.js 目前生效的 `addNotification(title, message, type, level,
+relatedSection, sourceId)` 內部其實有一段相容判斷：只要第一個參數是帳號 ID（`ACC-` 開頭）或
+`"all"`，且呼叫時只帶 ≤3 個參數，就會自動改用舊式 `(accountId, title, message)` 的方式解讀。
+也就是說舊式呼叫其實一直都能正常運作，不是 bug，這次沒有改動任何原本以舊式簽名呼叫
+`addNotification` 的既有程式碼。教練端本次新寫的程式碼沒有呼叫 `addNotification`（訓練紀錄
+新增只呼叫既有的 `addTrainingRecord()`），故本檔案不受影響。
+以上修改範圍侷限在「僅教練角色會呼叫到」的函式，不影響使用者／營養師／管理員三個頁面的行為。

@@ -48,12 +48,10 @@
                 <button class="nav-btn" onclick="toggleDropdown(this)"><i class="bi bi-people-fill"></i> 個案管理 <span class="nav-caret">▾</span></button>
                 <div class="nav-dropdown">
                     <button class="nav-dropdown-item" data-section="case-list-section" onclick="showSection('case-list-section')"><i class="bi bi-list-ul"></i> 個案列表</button>
-                    <button class="nav-dropdown-item" data-section="bmi-analysis-section" onclick="showSection('bmi-analysis-section')"><i class="bi bi-pie-chart-fill"></i> BMI 分析</button>
+                    <button class="nav-dropdown-item" data-section="case-overview-section" onclick="showSection('case-overview-section')"><i class="bi bi-clipboard2-pulse"></i> 個案總覽</button>
                     <button class="nav-dropdown-item" data-section="weight-trend-section" onclick="showSection('weight-trend-section')"><i class="bi bi-graph-up"></i> 體重趨勢</button>
-                    <button class="nav-dropdown-item" data-section="blood-pressure-section" onclick="showSection('blood-pressure-section')"><i class="bi bi-heart-pulse-fill"></i> 血壓提醒</button>
                 </div>
             </div>
-            <button class="nav-btn" data-section="diet-advice-section" onclick="showSection('diet-advice-section')"><i class="bi bi-robot"></i> AI 飲食建議</button>
             <button class="nav-btn" data-section="nutrition-record-section" onclick="showSection('nutrition-record-section')"><i class="bi bi-journal-text"></i> 營養紀錄</button>
         </div>
         <div class="nav-right">
@@ -112,8 +110,9 @@
                 </div>
                 <div class="card">
                     <h3>AI 飲食建議摘要</h3>
+                    <p class="disclaimer-note">AI 建議為規則式模擬展示，非真實營養師意見。</p>
                     <div id="nutrition-ai-summary"></div>
-                    <button class="secondary-button" onclick="showSection('diet-advice-section')" style="margin-top:12px">查看完整建議</button>
+                    <button class="secondary-button" onclick="showSection('case-overview-section')" style="margin-top:12px">查看完整建議</button>
                 </div>
             </div>
         </section>
@@ -131,30 +130,23 @@
             </div>
         </section>
 
-        <!-- BMI Analysis -->
-        <section id="bmi-analysis-section" class="content-section">
-            <h2 class="section-title">BMI 分析</h2>
-            <div id="bmi-analysis-panel"></div>
+        <!-- Case Overview (合併：BMI 分析 + 血壓提醒 + AI 飲食建議) -->
+        <section id="case-overview-section" class="content-section">
+            <h2 class="section-title">個案總覽</h2>
+            <p class="disclaimer-note">依授權範圍顯示，未授權欄位不顯示；AI 飲食建議為規則式模擬展示。</p>
+            <div id="case-overview-panel"></div>
         </section>
 
         <!-- Weight Trend -->
         <section id="weight-trend-section" class="content-section">
             <h2 class="section-title">體重趨勢</h2>
             <div class="card">
+                <div class="form-group" style="max-width:280px">
+                    <label for="nutrition-weight-case-select">選擇個案</label>
+                    <select id="nutrition-weight-case-select" onchange="renderNutritionWeightTrend()"></select>
+                </div>
                 <div class="chart-card"><canvas id="nutrition-weight-chart" height="220" role="img" aria-label="個案體重趨勢圖"></canvas></div>
             </div>
-        </section>
-
-        <!-- Blood Pressure -->
-        <section id="blood-pressure-section" class="content-section">
-            <h2 class="section-title">血壓提醒</h2>
-            <div id="blood-pressure-panel"></div>
-        </section>
-
-        <!-- Diet Advice -->
-        <section id="diet-advice-section" class="content-section">
-            <h2 class="section-title">AI 飲食建議</h2>
-            <div id="diet-advice-panel"></div>
         </section>
 
         <!-- Nutrition Record -->
@@ -199,7 +191,7 @@
     <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <script src="shared.js?v=20260708-insertbefore-fix"></script>
+    <script src="shared.js?v=20260710-role-rebuild"></script>
     <script>
         (async function () {
             await initDefaultAccounts();

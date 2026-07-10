@@ -55,9 +55,12 @@
                 <button class="nav-btn" onclick="toggleDropdown(this)"><i class="bi bi-robot"></i> AI 分析 <span class="nav-caret">▾</span></button>
                 <div class="nav-dropdown">
                     <button class="nav-dropdown-item" data-section="ai-health-section" onclick="showSection('ai-health-section')"><i class="bi bi-lightbulb"></i> AI 健康建議</button>
+                    <button class="nav-dropdown-item" data-section="ai-prediction-section" onclick="showSection('ai-prediction-section')"><i class="bi bi-graph-up-arrow"></i> AI 風險預測</button>
                 </div>
             </div>
             <button class="nav-btn" data-section="share-section" onclick="showSection('share-section')"><i class="bi bi-share-fill"></i> 授權分享</button>
+            <button class="nav-btn" data-section="profile-section" onclick="showSection('profile-section')"><i class="bi bi-person-gear"></i> 個人資料設定</button>
+            <button class="nav-btn" data-section="health-report-section" onclick="showSection('health-report-section')"><i class="bi bi-file-earmark-pdf"></i> 健康報告下載</button>
         </div>
         <div class="nav-right">
             <button class="nav-notif-btn dark-mode-toggle" onclick="toggleDarkMode()" title="切換深色模式" aria-label="切換深色模式" aria-pressed="false"><i class="bi bi-moon-stars-fill"></i></button>
@@ -111,6 +114,7 @@
             <div class="dashboard-panels">
                 <div class="card">
                     <h3>AI 健康摘要</h3>
+                    <p class="disclaimer-note">AI 分析為規則式模擬展示，非真實醫療診斷。</p>
                     <div id="user-ai-summary"></div>
                     <button class="secondary-button" onclick="showSection('ai-health-section')">查看完整建議</button>
                 </div>
@@ -120,52 +124,51 @@
                     <button class="secondary-button" onclick="showSection('notification-section')">查看所有通知</button>
                 </div>
             </div>
+            <div class="card goal-progress-card">
+                <h3>目標達成度</h3>
+                <div id="goal-progress-body" class="goal-progress-body"></div>
+            </div>
         </section>
 
         <!-- Health Input -->
         <section id="health-input-section" class="content-section">
-            <h2 class="section-title">新增健康資料</h2>
-            <div class="card form-card">
-                <form onsubmit="submitHealthData(event)">
-                    <div class="form-group">
-                        <label for="health-date">日期</label>
-                        <input id="health-date" type="date" required />
+            <div class="ai-gradient-header"><div><span>Health Data</span><h2>健康資料</h2><p>填寫今日量測、活動與生活習慣，送出後產生健康摘要、AI 分析、FHIR 與趨勢資料。</p></div></div>
+            <div class="card form-card health-form-section">
+                <form id="health-data-form" onsubmit="submitHealthData(event)">
+                    <h3 class="health-section-title">基本量測</h3>
+                    <div class="health-form-grid">
+                        <div class="form-group"><label for="health-date">日期</label><input id="health-date" type="date" required /></div>
+                        <div class="form-group"><label for="health-height">身高 cm</label><input id="health-height" type="number" min="80" max="230" step="0.1" required oninput="updateBMIPreview()" /></div>
+                        <div class="form-group"><label for="health-weight">體重 kg</label><input id="health-weight" type="number" min="20" max="250" step="0.1" required oninput="updateBMIPreview()" /></div>
+                        <div class="bmi-preview-card"><span>BMI 自動計算</span><strong id="health-bmi-preview">--</strong><small id="health-bmi-category">輸入身高與體重後顯示</small></div>
                     </div>
-                    <div class="form-row-3">
-                        <div class="form-group">
-                            <label for="health-systolic">收縮壓 (mmHg)</label>
-                            <input id="health-systolic" type="number" min="60" max="220" placeholder="120" required />
-                        </div>
-                        <div class="form-group">
-                            <label for="health-diastolic">舒張壓 (mmHg)</label>
-                            <input id="health-diastolic" type="number" min="40" max="130" placeholder="80" required />
-                        </div>
-                        <div class="form-group">
-                            <label for="health-heart-rate">心率 (bpm)</label>
-                            <input id="health-heart-rate" type="number" min="40" max="220" placeholder="72" required />
-                        </div>
+                    <h3 class="health-section-title">血壓與心率</h3>
+                    <div class="health-form-grid">
+                        <div class="form-group"><label for="health-systolic">收縮壓 systolic</label><input id="health-systolic" type="number" min="70" max="220" required /></div>
+                        <div class="form-group"><label for="health-diastolic">舒張壓 diastolic</label><input id="health-diastolic" type="number" min="40" max="140" required /></div>
+                        <div class="form-group"><label for="health-heart-rate">心率 bpm</label><input id="health-heart-rate" type="number" min="40" max="180" required /></div>
                     </div>
-                    <div class="form-row-3">
-                        <div class="form-group">
-                            <label for="health-weight">體重 (kg)</label>
-                            <input id="health-weight" type="number" min="30" max="250" step="0.1" placeholder="70.0" required />
-                        </div>
-                        <div class="form-group">
-                            <label for="health-height">身高 (cm)</label>
-                            <input id="health-height" type="number" min="100" max="250" placeholder="170" required />
-                        </div>
-                        <div class="form-group">
-                            <label for="health-steps">步數</label>
-                            <input id="health-steps" type="number" min="0" max="100000" placeholder="8000" required />
-                        </div>
+                    <h3 class="health-section-title">運動資料</h3>
+                    <div class="health-form-grid">
+                        <div class="form-group"><label for="health-steps">今日步數</label><input id="health-steps" type="number" min="0" max="100000" required /></div>
+                        <div class="form-group"><label for="health-exercise-type">運動類型</label><select id="health-exercise-type"><option>慢跑</option><option>快走</option><option>重訓</option><option>游泳</option><option>騎車</option><option>瑜珈</option><option>球類</option><option>休息</option></select></div>
+                        <div class="form-group"><label for="health-exercise">運動時間 min</label><input id="health-exercise" type="number" min="0" max="600" required /></div>
+                        <div class="form-group"><label for="health-calories">消耗熱量 kcal</label><input id="health-calories" type="number" min="0" max="5000" /></div>
                     </div>
-                    <div class="form-group">
-                        <label for="health-exercise">運動時間 (分鐘)</label>
-                        <input id="health-exercise" type="number" min="0" max="600" placeholder="30" required />
+                    <h3 class="health-section-title">生活習慣</h3>
+                    <div class="health-form-grid">
+                        <div class="form-group"><label for="health-sleep">睡眠小時</label><input id="health-sleep" type="number" min="0" max="24" step="0.5" required /></div>
+                        <div class="form-group"><label for="health-water">飲水 ml</label><input id="health-water" type="number" min="0" max="10000" step="50" /></div>
+                        <div class="form-group"><label for="health-stress">壓力 1-5</label><input id="health-stress" type="number" min="1" max="5" required /></div>
+                        <div class="form-group"><label for="health-diet">飲食狀態</label><select id="health-diet" required><option>正常</option><option>高鹽飲食</option><option>高糖飲食</option><option>高油飲食</option><option>蛋白質不足</option></select></div>
                     </div>
-                    <button type="submit" class="primary-button">儲存健康資料</button>
+                    <div class="form-actions"><button type="submit" class="primary-button">儲存健康資料</button></div>
                 </form>
             </div>
+            <section id="health-record-list" class="card">
+                <h3 class="health-section-title">最近健康資料</h3>
+                <div class="health-record-table-wrapper"><table class="health-record-table"><thead><tr><th>日期</th><th>血壓</th><th>體重</th><th>BMI</th><th>心率</th><th>步數</th><th>運動</th><th>睡眠</th><th>狀態</th><th>操作</th></tr></thead><tbody id="health-record-table-body"></tbody></table></div>
+            </section>
         </section>
 
         <!-- Health Trend -->
@@ -192,41 +195,27 @@
         <!-- AI Health -->
         <section id="ai-health-section" class="content-section">
             <h2 class="section-title">AI 健康建議</h2>
+            <p class="disclaimer-note">AI 分析為規則式模擬展示，非真實醫療診斷。</p>
             <div id="ai-health-panel">
-                <div class="ai-analysis-layout">
-                    <div class="ai-score-card">
-                        <span>AI 健康分數</span>
-                        <strong id="ai-score-value">--</strong>
-                        <small id="ai-risk-level">目前尚無資料</small>
+                <div class="ai-dashboard">
+                    <div class="ai-gradient-header"><div><span>AI Health Dashboard</span><h2>AI 健康分析</h2><p id="ai-summary">目前尚無健康資料，請先新增健康紀錄以產生 AI 分析。</p></div><span id="ai-risk-level" class="ai-status-badge muted">No Data</span></div>
+                    <div class="ai-dashboard-grid"><article class="ai-score-card"><div class="ai-gauge" style="--score:0"><div class="ai-gauge-inner"><strong id="ai-score-value">--</strong><span>/100</span></div></div><small>AI 健康分數</small></article><article class="ai-risk-card"><h3>風險標籤</h3><div id="ai-risk-tags" class="ai-risk-chip-list"></div></article></div>
+                    <div id="ai-kpi-grid" class="ai-kpi-grid"></div>
+                    <div class="ai-advice-grid">
+                        <article class="ai-advice-card"><span class="ai-card-icon"><i class="bi bi-fork-knife"></i></span><h3>飲食</h3><p id="ai-diet-advice">--</p></article>
+                        <article class="ai-advice-card"><span class="ai-card-icon"><i class="bi bi-person-walking"></i></span><h3>運動</h3><p id="ai-exercise-advice">--</p></article>
+                        <article class="ai-advice-card"><span class="ai-card-icon"><i class="bi bi-moon-stars-fill"></i></span><h3>睡眠</h3><p id="ai-sleep-advice">--</p></article>
+                        <article class="ai-advice-card"><span class="ai-card-icon"><i class="bi bi-droplet-fill"></i></span><h3>飲水</h3><p id="ai-water-advice">--</p></article>
+                        <article class="ai-advice-card"><span class="ai-card-icon"><i class="bi bi-heart-pulse-fill"></i></span><h3>醫療提醒</h3><p id="ai-medical-advice">--</p></article>
                     </div>
-                    <div class="ai-trend-summary">
-                        <h3>AI 趨勢摘要</h3>
-                        <p id="ai-summary">目前尚無健康資料，請先新增健康紀錄以產生 AI 分析。</p>
-                        <div id="ai-trend-summary" class="ai-trend-grid"></div>
-                    </div>
-                </div>
-                <div id="ai-risk-tags" class="ai-risk-chip-list"></div>
-                <div class="ai-advice-grid">
-                    <article class="ai-advice-card"><h3>飲食建議</h3><p id="ai-diet-advice">--</p></article>
-                    <article class="ai-advice-card"><h3>運動建議</h3><p id="ai-exercise-advice">--</p></article>
-                    <article class="ai-advice-card"><h3>睡眠建議</h3><p id="ai-sleep-advice">--</p></article>
-                    <article class="ai-advice-card"><h3>就醫提醒</h3><p id="ai-medical-advice">--</p></article>
-                    <article class="ai-advice-card"><h3>生活習慣建議</h3><p id="ai-lifestyle-advice">--</p></article>
+                    <div class="ai-dashboard-grid bottom"><article class="ai-risk-card"><h3>健康風險分析</h3><div class="radar-wrap"><canvas id="ai-risk-radar" width="420" height="320"></canvas></div></article><article class="ai-trend-summary"><h3>AI 趨勢摘要</h3><div id="ai-trend-summary" class="ai-trend-grid"></div></article></div>
+                    <article class="ai-timeline-card"><h3>健康建議時間軸</h3><div id="ai-timeline" class="ai-timeline"></div></article>
                 </div>
             </div>
         </section>
 
-        <!-- FHIR Viewer -->
-        <section id="fhir-viewer-section" class="content-section">
-            <h2 class="section-title">FHIR JSON 預覽</h2>
-            <div class="card">
-                <div style="display:flex;gap:8px;margin-bottom:12px">
-                    <button class="secondary-button" onclick="copyFHIR()">複製 JSON</button>
-                    <button class="secondary-button" onclick="downloadFHIR()">下載 .json</button>
-                </div>
-                <pre id="fhir-json-output" class="code-block"></pre>
-            </div>
-        </section>
+        <!-- AI Prediction (原為執行期動態注入，現改為靜態容器，內容由 renderHealthPrediction() 完整渲染) -->
+        <section id="ai-prediction-section" class="content-section"></section>
 
         <!-- Share -->
         <section id="share-section" class="content-section">
@@ -280,6 +269,59 @@
             </div>
         </section>
 
+        <!-- Profile Settings (原為執行期動態注入，現改為靜態內容；渲染邏輯 renderProfileSection() 只負責填值，不再建立節點) -->
+        <section id="profile-section" class="content-section">
+            <h2 class="section-title">個人資料設定</h2>
+            <div class="card form-card profile-card">
+                <form onsubmit="submitProfileSettings(event)">
+                    <div class="form-row-2">
+                        <div class="form-group">
+                            <label for="profile-name">姓名</label>
+                            <input id="profile-name" type="text" required />
+                        </div>
+                        <div class="form-group">
+                            <label for="profile-gender">性別</label>
+                            <select id="profile-gender" required>
+                                <option value="male">男</option>
+                                <option value="female">女</option>
+                                <option value="other">其他</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="form-row-3">
+                        <div class="form-group">
+                            <label for="profile-birthday">生日</label>
+                            <input id="profile-birthday" type="date" required />
+                        </div>
+                        <div class="form-group">
+                            <label for="profile-height">身高 cm</label>
+                            <input id="profile-height" type="number" min="80" max="230" step="0.1" required />
+                        </div>
+                        <div class="form-group">
+                            <label for="profile-target-weight">目標體重 kg</label>
+                            <input id="profile-target-weight" type="number" min="30" max="250" step="0.1" required />
+                        </div>
+                    </div>
+                    <div class="form-row-2">
+                        <div class="form-group">
+                            <label for="profile-daily-step-goal">每日步數目標</label>
+                            <input id="profile-daily-step-goal" type="number" min="0" max="100000" step="100" required />
+                        </div>
+                        <div class="form-group">
+                            <label for="profile-weekly-exercise-goal">每週運動目標分鐘數</label>
+                            <input id="profile-weekly-exercise-goal" type="number" min="0" max="2000" step="5" required />
+                        </div>
+                    </div>
+                    <p class="profile-help">BMI 計算主要使用此處的身高設定；單筆健康資料若有身高，會優先使用該筆資料。</p>
+                    <button type="submit" class="primary-button">儲存個人資料</button>
+                </form>
+            </div>
+        </section>
+
+        <!-- Health Report Download (原為執行期動態注入，現改為靜態容器，內容由 renderHealthReport() 完整渲染) -->
+        <section id="health-report-section" class="content-section"></section>
+
+        <!-- Wearable Import -->
         <section id="wearable-import-section" class="content-section">
             <div class="section-heading">
                 <h2>穿戴裝置資料匯入</h2>
@@ -341,132 +383,6 @@
             </div>
         </section>
 
-        <!-- Registration -->
-        <section id="registration-section" class="content-section">
-            <div class="registration-hero">
-                <div>
-                    <h2>競賽報名系統</h2>
-                    <p>請填寫隊伍資料、作品資訊與 FHIR 實作內容。</p>
-                </div>
-                <button type="button" class="secondary-button" onclick="showSection('my-registration-section')">查看我的報名</button>
-            </div>
-            <div class="card form-card registration-form-card">
-                <form onsubmit="submitRegistration(event)">
-                    <div class="registration-form-section">
-                        <h3 class="registration-section-title"><span>01</span>隊伍資料</h3>
-                        <div class="form-row-2">
-                            <div class="form-group">
-                                <label for="reg-team-name">團隊名稱</label>
-                                <input id="reg-team-name" type="text" placeholder="輸入團隊名稱" required />
-                            </div>
-                            <div class="form-group">
-                                <label for="reg-category">主題領域</label>
-                                <div class="custom-select" data-target="reg-category">
-                                    <button type="button" class="custom-select-trigger">
-                                        <span>運動健康</span>
-                                        <i class="fas fa-chevron-down" aria-hidden="true"></i>
-                                    </button>
-                                    <div class="custom-select-menu">
-                                        <button type="button" data-value="醫療資訊">醫療資訊</button>
-                                        <button type="button" data-value="運動健康">運動健康</button>
-                                        <button type="button" data-value="長期照護">長期照護</button>
-                                        <button type="button" data-value="教育科技">教育科技</button>
-                                        <button type="button" data-value="問卷／資料收集應用">問卷／資料收集應用</button>
-                                    </div>
-                                    <input type="hidden" id="reg-category" value="運動健康" />
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="registration-form-section">
-                        <h3 class="registration-section-title"><span>02</span>隊長資料</h3>
-                        <div class="form-row-3">
-                            <div class="form-group">
-                                <label for="reg-leader-name">隊長姓名</label>
-                                <input id="reg-leader-name" type="text" placeholder="隊長姓名" required />
-                            </div>
-                            <div class="form-group">
-                                <label for="reg-email">聯絡 Email</label>
-                                <input id="reg-email" type="email" placeholder="email@example.com" required />
-                            </div>
-                            <div class="form-group">
-                                <label for="reg-phone">手機</label>
-                                <input id="reg-phone" type="tel" placeholder="09XXXXXXXX" required />
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label for="reg-organization">學校／單位</label>
-                            <input id="reg-organization" type="text" placeholder="學校或機構" required />
-                        </div>
-                    </div>
-
-                    <div class="registration-form-section">
-                        <h3 class="registration-section-title"><span>03</span>隊員資料</h3>
-                        <div class="form-row-3">
-                            <div class="form-group">
-                                <label for="reg-member-1">成員 1</label>
-                                <input id="reg-member-1" type="text" placeholder="姓名" />
-                            </div>
-                            <div class="form-group">
-                                <label for="reg-member-2">成員 2</label>
-                                <input id="reg-member-2" type="text" placeholder="姓名" />
-                            </div>
-                            <div class="form-group">
-                                <label for="reg-member-3">成員 3</label>
-                                <input id="reg-member-3" type="text" placeholder="姓名" />
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="registration-form-section">
-                        <h3 class="registration-section-title"><span>04</span>作品資料</h3>
-                        <div class="form-group">
-                            <label for="reg-project-name">作品名稱</label>
-                            <input id="reg-project-name" type="text" placeholder="輸入作品名稱" required />
-                        </div>
-                        <div class="form-group">
-                            <label for="reg-description">作品描述</label>
-                            <textarea id="reg-description" rows="3" placeholder="簡述作品內容與特色" required></textarea>
-                        </div>
-                        <div class="form-row-2">
-                            <div class="form-group">
-                                <label for="reg-roles">使用者角色</label>
-                                <input id="reg-roles" type="text" placeholder="user, coach, nutritionist, admin" required />
-                            </div>
-                            <div class="form-group">
-                                <label for="reg-fhir-resources">FHIR Resources</label>
-                                <input id="reg-fhir-resources" type="text" placeholder="Patient, Observation..." required />
-                            </div>
-                        </div>
-                        <div class="form-row-2">
-                            <div class="form-group">
-                                <label for="reg-github-url">GitHub URL</label>
-                                <input id="reg-github-url" type="url" placeholder="https://github.com/..." />
-                            </div>
-                            <div class="form-group">
-                                <label for="reg-demo-url">Demo URL</label>
-                                <input id="reg-demo-url" type="url" placeholder="https://..." />
-                            </div>
-                        </div>
-                        <div class="form-group">
-                            <label for="reg-note">備註</label>
-                            <textarea id="reg-note" rows="2" placeholder="其他補充說明"></textarea>
-                        </div>
-                    </div>
-
-                    <div class="registration-submit-bar">
-                        <button type="submit" class="primary-button registration-submit-button">送出報名</button>
-                    </div>
-                </form>
-            </div>
-        </section>
-
-        <!-- My Registration -->
-        <section id="my-registration-section" class="content-section">
-            <div id="my-registration-body"></div>
-        </section>
-
         <!-- Notifications -->
         <section id="notification-section" class="content-section">
             <h2 class="section-title">通知中心</h2>
@@ -483,7 +399,7 @@
 
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
-    <script src="shared.js?v=20260708-insertbefore-fix"></script>
+    <script src="shared.js?v=20260710-role-rebuild"></script>
     <script>
         (async function () {
             await initDefaultAccounts();
